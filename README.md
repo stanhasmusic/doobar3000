@@ -63,18 +63,25 @@ Dev-harness env vars (used for automated testing, safe to ignore):
 
 ## Roadmap
 
-- **Phase 1 — MVP: DONE** (everything above).
+- **Phase 1 — MVP: DONE** (everything above). User-tested 2026-06-12, working.
 - **Phase 2 — Audio polish**: real-time spectrum analyzer + VU meter in the top bar slot;
   LUFS auto-leveling (EBU R128 / ReplayGain 2.0) with track/album/off modes, album mode
   preserving relative loudness. ffmpeg arrives here (LUFS scanning) and doubles as the
-  decoder fallback for exotic formats (ape, wma, …) via a one-click download.
-- **Phase 3 — Smart library**: AcoustID/MusicBrainz auto-tagging (needs free API key),
-  duplicate detection, Spotify/Apple Music search links in the context menu.
+  decoder fallback for exotic formats (ALAC, ape, wma, …) via a one-click download.
+  Also: embedded album-art panel (bottom of sidebar), drag-and-drop files/folders from
+  Explorer into library or playlists, and scanner captures bitrate / sample rate / codec /
+  file type so the Phase 3 column picker has data (avoids forcing rescans later).
+- **Phase 3 — Library UX + smart library**: re-arrangeable and add/remove track-list
+  columns (bitrate, file type, year, …); AcoustID/MusicBrainz auto-tagging (needs free
+  API key); auto-fetch missing album art (Cover Art Archive, via the same MusicBrainz IDs);
+  duplicate detection; Spotify/Apple Music search links in the context menu.
 - **Phase 4 — Stretch**: auto-playlists by genre/vibe; possibly a chat assistant panel.
+- **Final polish**: revisit color scheme/theming (palette lives in CSS variables at the
+  top of `styles.css`).
 
 ## Where we left off
 
-Phase 1 complete and verified with real files (`Music_for_Testing/`, gitignored): mp3
-scanning/playback/waveform confirmed, ALAC m4a correctly skipped with a notice. Awaiting
-user testing before starting Phase 2. First Phase 2 task: ffmpeg integration (LUFS scan +
-ALAC/exotic-format decode fallback).
+Phase 1 complete, verified with real files, and user-tested ("everything functioning
+well"). Next up: Phase 2 — first task is ffmpeg integration (LUFS scan + ALAC/exotic-format
+decode fallback), then analyzers, auto-gain, album art panel, Explorer drag-and-drop, and
+the scanner field additions.
