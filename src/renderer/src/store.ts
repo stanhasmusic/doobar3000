@@ -1,6 +1,35 @@
 import { create } from 'zustand'
-import type { Playlist, ScanProgress, Track } from '../../shared/types'
+import type { FfmpegStatus, LevelMode, Playlist, ScanProgress, Track } from '../../shared/types'
 import { audio } from './audio'
+
+const LUFS_TARGET = -18 // ReplayGain 2.0 reference loudness
+
+// Gain to apply for the current leveling mode. Album mode computes one gain for
+// the whole album (energy-weighted average loudness), so tracks keep their
+// relative dynamics; the gain is capped so no track on the album would clip.
+function levelingDb(track: Track | undefined, mode: LevelMode, library: Track[]): number {
+  if (!track || mode === 'off' || track.lufs === null) return 0
+  let gainDb: number
+  let headroom: number
+  if (mode === 'album') {
+    const albumTracks = library.filter(
+      (t) => t.album === track.album && t.albumArtist === track.albumArtist && t.lufs !== null
+    )
+    if (!albumTracks.length) return 0
+    let energy = 0
+    let dur = 0
+    for (const t of albumTracks) {
+      energy += t.duration * Math.pow(10, t.lufs! / 10)
+      dur += t.duration
+    }
+    gainDb = LUFS_TARGET - 10 * Math.log10(energy / Math.max(dur, 1))
+    headroom = Math.min(...albumTracks.map((t) => -1 - (t.peakDb ?? 0)))
+  } else {
+    gainDb = LUFS_TARGET - track.lufs
+    headroom = -1 - (track.peakDb ?? 0)
+  }
+  return Math.max(-24, Math.min(gainDb, Math.max(headroom, 0), 12))
+}
 
 export type View = { type: 'library' } | { type: 'playlist'; id: string }
 export type SortKey = 'title' | 'artist' | 'album' | 'genre' | 'duration' | 'trackNo'
@@ -20,9 +49,20 @@ interface State {
   scanning: ScanProgress | null
   selectedPath: string | null
   notice: string | null
+  levelMode: LevelMode
+  ffmpeg: FfmpegStatus | null
+  ffmpegProgress: number | null
+  lufsProgress: ScanProgress | null
+  /** actual file being played (a transcode-cache path when the original can't decode) */
+  playbackPath: string | null
 
   init: () => Promise<void>
   importFolder: () => Promise<void>
+  importPaths: (paths: string[]) => Promise<string[]>
+  dropOnPlaylist: (id: string, paths: string[]) => Promise<void>
+  setLevelMode: (m: LevelMode) => void
+  downloadFfmpeg: () => Promise<void>
+  showNotice: (msg: string) => void
   setView: (v: View) => void
   setSort: (k: SortKey) => void
   setSelected: (path: string | null) => void
@@ -58,18 +98,37 @@ export const useStore = create<State>((set, get) => ({
   scanning: null,
   selectedPath: null,
   notice: null,
+  levelMode: 'off',
+  ffmpeg: null,
+  ffmpegProgress: null,
+  lufsProgress: null,
+  playbackPath: null,
 
   init: async () => {
-    const [library, playlists, settings] = await Promise.all([
+    const [library, playlists, settings, ffmpeg] = await Promise.all([
       window.api.getLibrary(),
       window.api.getPlaylists(),
-      window.api.getSettings()
+      window.api.getSettings(),
+      window.api.ffmpegStatus()
     ])
     audio.setVolume(settings.volume)
-    set({ library, playlists, volume: settings.volume })
+    set({ library, playlists, volume: settings.volume, levelMode: settings.levelMode, ffmpeg })
     window.api.onScanProgress((p) => {
       set({ scanning: p.done >= p.total ? null : p })
     })
+    window.api.onFfmpegProgress((pct) => set({ ffmpegProgress: pct }))
+    window.api.onLufsProgress((p) => set({ lufsProgress: p.done >= p.total ? null : p }))
+    window.api.onLufsUpdate((u) => {
+      set({
+        library: get().library.map((t) =>
+          t.path === u.path ? { ...t, lufs: u.lufs, peakDb: u.peakDb } : t
+        )
+      })
+      if (u.path === get().currentPath) applyLeveling()
+    })
+    if (ffmpeg.found && library.some((t) => t.lufs === null)) {
+      void window.api.analyzeLoudness()
+    }
   },
 
   importFolder: async () => {
@@ -78,6 +137,42 @@ export const useStore = create<State>((set, get) => ({
     set({ scanning: { done: 0, total: 0 } })
     const library = await window.api.scanFolder(dir)
     set({ library, scanning: null })
+    if (get().ffmpeg?.found) void window.api.analyzeLoudness()
+  },
+
+  importPaths: async (paths) => {
+    set({ scanning: { done: 0, total: 0 } })
+    const { library, added } = await window.api.importPaths(paths)
+    set({ library, scanning: null })
+    get().showNotice(`Added ${added.length} track${added.length === 1 ? '' : 's'}`)
+    if (get().ffmpeg?.found) void window.api.analyzeLoudness()
+    return added
+  },
+
+  dropOnPlaylist: async (id, paths) => {
+    const added = await get().importPaths(paths)
+    if (added.length) get().addToPlaylist(id, added)
+  },
+
+  setLevelMode: (levelMode) => {
+    set({ levelMode })
+    void window.api.saveSettings({ volume: get().volume, levelMode })
+    applyLeveling()
+  },
+
+  downloadFfmpeg: async () => {
+    set({ ffmpegProgress: 0 })
+    const ok = await window.api.ffmpegDownload()
+    const ffmpeg = await window.api.ffmpegStatus()
+    set({ ffmpeg, ffmpegProgress: null })
+    get().showNotice(ok ? 'Decoder pack installed.' : 'Decoder pack download failed.')
+    if (ok && get().library.some((t) => t.lufs === null)) void window.api.analyzeLoudness()
+  },
+
+  showNotice: (msg) => {
+    set({ notice: msg })
+    clearTimeout(noticeTimer)
+    noticeTimer = setTimeout(() => set({ notice: null }), 5000)
   },
 
   setView: (view) => set({ view, selectedPath: null }),
@@ -89,7 +184,15 @@ export const useStore = create<State>((set, get) => ({
 
   playQueue: (paths, index) => {
     if (!paths.length) return
-    set({ queue: paths, queueIndex: index, currentPath: paths[index], playing: true, position: 0 })
+    set({
+      queue: paths,
+      queueIndex: index,
+      currentPath: paths[index],
+      playbackPath: paths[index],
+      playing: true,
+      position: 0
+    })
+    applyLeveling()
     audio.load(paths[index], true)
   },
   togglePlay: () => {
@@ -112,7 +215,7 @@ export const useStore = create<State>((set, get) => ({
       get().playQueue(queue, queueIndex + 1)
     } else {
       audio.stop()
-      set({ playing: false, currentPath: null, position: 0, queueIndex: -1 })
+      set({ playing: false, currentPath: null, playbackPath: null, position: 0, queueIndex: -1 })
     }
   },
   prev: () => {
@@ -132,7 +235,10 @@ export const useStore = create<State>((set, get) => ({
     audio.setVolume(volume)
     set({ volume })
     clearTimeout(saveSettingsTimer)
-    saveSettingsTimer = setTimeout(() => void window.api.saveSettings({ volume }), 400)
+    saveSettingsTimer = setTimeout(
+      () => void window.api.saveSettings({ volume, levelMode: get().levelMode }),
+      400
+    )
   },
 
   createPlaylist: (name) => {
@@ -176,16 +282,42 @@ export const useStore = create<State>((set, get) => ({
 audio.onEnded = () => useStore.getState().next()
 
 let noticeTimer: ReturnType<typeof setTimeout> | undefined
+
+function applyLeveling(): void {
+  const s = useStore.getState()
+  audio.setLevelGainDb(levelingDb(trackByPath(s.library, s.currentPath), s.levelMode, s.library))
+}
+
+// Chromium can't decode this file (e.g. ALAC). If ffmpeg is installed, transcode
+// to cached FLAC and retry once; otherwise tell the user and skip.
+const transcodeTried = new Set<string>()
 audio.onError = () => {
   const st = useStore.getState()
-  const failed = trackByPath(st.library, st.currentPath)
-  // unsupported codec (e.g. ALAC until the Phase 2 ffmpeg fallback): tell the user, move on
-  useStore.setState({
-    notice: failed ? `Can't play "${failed.title}" — unsupported format. Skipping.` : null
-  })
-  clearTimeout(noticeTimer)
-  noticeTimer = setTimeout(() => useStore.setState({ notice: null }), 5000)
-  st.next()
+  const orig = st.currentPath
+  const failed = trackByPath(st.library, orig)
+  if (!orig || !failed) return
+  if (st.ffmpeg?.found && !transcodeTried.has(orig)) {
+    transcodeTried.add(orig)
+    st.showNotice(`Converting "${failed.title}"…`)
+    void window.api.transcode(orig).then((out) => {
+      const cur = useStore.getState()
+      if (cur.currentPath !== orig) return // user moved on while we converted
+      if (out) {
+        useStore.setState({ playbackPath: out, notice: null })
+        audio.load(out, cur.playing)
+      } else {
+        cur.showNotice(`Can't play "${failed.title}" — conversion failed. Skipping.`)
+        cur.next()
+      }
+    })
+  } else {
+    st.showNotice(
+      st.ffmpeg?.found
+        ? `Can't play "${failed.title}" — unsupported format. Skipping.`
+        : `Can't play "${failed.title}" — install the decoder pack (⚙) to play this format.`
+    )
+    st.next()
+  }
 }
 audio.onTimeUpdate = (time) => {
   // coarse updates for the top-bar clock; the waveform reads time via rAF directly

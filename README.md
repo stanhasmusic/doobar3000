@@ -3,7 +3,26 @@
 A native Windows music player: **iTunes-simple to use, foobar2000-powerful under the hood.**
 Fixed, polished layout out of the box — no user-assembled panels.
 
-## What it does today (end of Phase 1)
+## What it does today (end of Phase 2)
+
+- **Real-time visualizers** in the top bar: log-frequency spectrum analyzer and stereo
+  VU meter with peak hold, fed by `AnalyserNode` taps on the playback graph.
+- **LUFS auto-leveling** (EBU R128 / ReplayGain 2.0, target −18 LUFS): every track is
+  analyzed in the background via ffmpeg's `ebur128` filter (2 workers, results stream in
+  and persist). Toggle Off / Track / Album in the ⚙ menu — Album mode applies one
+  energy-weighted gain per album so its internal dynamics survive; positive gains are
+  capped by true peak to avoid clipping.
+- **Decoder pack**: ⚙ menu offers a one-click ~80 MB ffmpeg download (gyan.dev essentials
+  → extracted with Windows' built-in tar → `%APPDATA%\doobar3000\bin`). With it installed,
+  Chromium-unplayable formats (ALAC, APE, WMA, …) transparently transcode to cached FLAC
+  (`%APPDATA%\doobar3000\transcode/`) and play; without it they skip with a notice.
+- **Album art panel** (bottom of sidebar) showing the current track's embedded art.
+- **Drag-and-drop from Explorer**: drop files/folders onto the track list to import, or
+  onto a playlist to import-and-add.
+- Scanner now records bitrate / sample rate / codec / file type (for Phase 3 columns)
+  and LUFS analysis fields. Rescan a folder to backfill old entries.
+
+## Phase 1 features
 
 - **Import a folder** of music (mp3, flac, m4a, aac, ogg, opus, wav). Tags are read with
   `music-metadata`; the library persists between launches.
@@ -27,8 +46,11 @@ npm run dev
 Optional: `npm run make-test-audio` generates tagged test WAVs in `./test-music/`.
 
 Dev-harness env vars (used for automated testing, safe to ignore):
-`SCAN_DIR=<folder>` seeds the library on launch · `DEV_AUTOPLAY=1` plays the first track ·
-`SCREENSHOT_PATH=<file.png>` captures the window after 5s and exits.
+`SCAN_DIR=<folder>` merge-scans a folder on launch · `DEV_AUTOPLAY=1` plays the first
+track · `DEV_SEEK=<sec>` seeks shortly after autoplay · `SCREENSHOT_PATH=<file.png>`
+captures the window and exits (`SCREENSHOT_DELAY=<ms>`, default 5000) ·
+`DEV_FFMPEG_DOWNLOAD=1` exercises the decoder-pack download · `DEBUG_LOG=1` prints
+media-protocol requests and renderer console to the terminal.
 
 ## Tech stack
 
@@ -50,10 +72,17 @@ Dev-harness env vars (used for automated testing, safe to ignore):
   seeking. It also adds an `Access-Control-Allow-Origin` header — **without that header Web
   Audio outputs silence** (cross-origin media elements are "tainted"). The `<audio>` element
   uses `crossOrigin='anonymous'`.
-- **ALAC (Apple Lossless) m4a files don't decode** — Chromium has no ALAC codec
-  (`DEMUXER_ERROR_NO_SUPPORTED_STREAMS`). The player shows a notice and auto-skips them.
-  The Phase 2 ffmpeg fallback will make these playable. AAC m4a files are fine.
-- `DEBUG_LOG=1` prints media protocol requests and renderer console to the terminal.
+- **ALAC (Apple Lossless) m4a files don't decode in Chromium**
+  (`DEMUXER_ERROR_NO_SUPPORTED_STREAMS`); AAC m4a is fine. With the decoder pack
+  installed, the `<audio>` error handler transcodes once to cached FLAC and retries;
+  the waveform decodes from the transcode (`playbackPath`) but caches peaks under the
+  original path.
+- **ebur128 stderr parsing**: the filter logs a progress line per frame whose `I:` value
+  starts at −70 LUFS — always take the LAST `I:`/`Peak:` match (the summary), not the first.
+- **React StrictMode double-mounts in dev** — store init/autoplay is guarded by a module
+  flag (`App.tsx`), otherwise listeners register twice and tracks double-load.
+- Stray Electron instances from interrupted dev runs hold the userData dir and Vite port
+  ("Unable to move the cache: Access is denied"); `Stop-Process -Name electron` clears them.
 - Streamed sources can report `duration = Infinity`; UI code falls back to the scanned
   metadata duration (see `WaveformBar.tsx`).
 - Volume is applied via the GainNode with a squared (perceptual) curve, not `el.volume`.
@@ -63,14 +92,10 @@ Dev-harness env vars (used for automated testing, safe to ignore):
 
 ## Roadmap
 
-- **Phase 1 — MVP: DONE** (everything above). User-tested 2026-06-12, working.
-- **Phase 2 — Audio polish**: real-time spectrum analyzer + VU meter in the top bar slot;
-  LUFS auto-leveling (EBU R128 / ReplayGain 2.0) with track/album/off modes, album mode
-  preserving relative loudness. ffmpeg arrives here (LUFS scanning) and doubles as the
-  decoder fallback for exotic formats (ALAC, ape, wma, …) via a one-click download.
-  Also: embedded album-art panel (bottom of sidebar), drag-and-drop files/folders from
-  Explorer into library or playlists, and scanner captures bitrate / sample rate / codec /
-  file type so the Phase 3 column picker has data (avoids forcing rescans later).
+- **Phase 1 — MVP: DONE.** User-tested 2026-06-12, working.
+- **Phase 2 — Audio polish: DONE** (everything in "what it does today"). Verified via
+  the dev harness: ALAC transcode playback, LUFS values sane (−9 to −13 LUFS on real
+  masters), visualizers live, download flow exercised end-to-end.
 - **Phase 3 — Library UX + smart library**: re-arrangeable and add/remove track-list
   columns (bitrate, file type, year, …); AcoustID/MusicBrainz auto-tagging (needs free
   API key); auto-fetch missing album art (Cover Art Archive, via the same MusicBrainz IDs);
@@ -81,7 +106,6 @@ Dev-harness env vars (used for automated testing, safe to ignore):
 
 ## Where we left off
 
-Phase 1 complete, verified with real files, and user-tested ("everything functioning
-well"). Next up: Phase 2 — first task is ffmpeg integration (LUFS scan + ALAC/exotic-format
-decode fallback), then analyzers, auto-gain, album art panel, Explorer drag-and-drop, and
-the scanner field additions.
+Phase 2 complete and self-verified; awaiting user testing before Phase 3 (column
+customization, AcoustID/MusicBrainz auto-tagging + cover-art fetch, duplicate detection,
+Spotify/Apple Music links).

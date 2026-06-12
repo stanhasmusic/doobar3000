@@ -1,4 +1,6 @@
 import { formatTime, trackByPath, useStore } from '../store'
+import { SettingsMenu } from './SettingsMenu'
+import { Spectrum, VuMeter } from './Visualizers'
 
 const Icon = ({ d, size = 16 }: { d: string; size?: number }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor">
@@ -54,7 +56,12 @@ export function TopBar() {
         )}
       </div>
 
-      <div className="viz-placeholder" title="Spectrum analyzer coming in Phase 2" />
+      <div className="viz">
+        <Spectrum />
+        <VuMeter />
+      </div>
+
+      <SettingsMenu />
 
       <div className="volume">
         <Icon d={PATHS.volume} size={15} />

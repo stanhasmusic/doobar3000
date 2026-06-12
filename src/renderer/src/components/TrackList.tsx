@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Track } from '../../../shared/types'
 import { formatTime, useStore, type SortKey } from '../store'
+import { droppedPaths } from './Sidebar'
 
 const ROW_HEIGHT = 34
 const OVERSCAN = 10
@@ -98,19 +99,29 @@ export function TrackList() {
       index
     )
 
+  // dropping files/folders from Explorer anywhere on the track area imports them
+  const dropProps = {
+    onDragOver: (e: React.DragEvent) => e.preventDefault(),
+    onDrop: (e: React.DragEvent) => {
+      e.preventDefault()
+      const paths = droppedPaths(e)
+      if (paths.length) void useStore.getState().importPaths(paths)
+    }
+  }
+
   if (!library.length) {
     return (
-      <div className="tracklist empty-state">
+      <div className="tracklist empty-state" {...dropProps}>
         <div>
           <h2>Your library is empty</h2>
-          <p>Click “+ Import Folder” in the sidebar to add your music.</p>
+          <p>Click “+ Import Folder” in the sidebar, or drop files/folders here.</p>
         </div>
       </div>
     )
   }
 
   return (
-    <div className="tracklist">
+    <div className="tracklist" {...dropProps}>
       <div className="list-header">
         {COLUMNS.map((c) => (
           <div

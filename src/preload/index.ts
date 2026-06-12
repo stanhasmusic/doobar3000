@@ -1,5 +1,5 @@
-import { contextBridge, ipcRenderer } from 'electron'
-import type { Playlist, ScanProgress, Settings, Track } from '../shared/types'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
+import type { FfmpegStatus, Playlist, ScanProgress, Settings, Track } from '../shared/types'
 
 const api = {
   selectFolder: (): Promise<string | null> => ipcRenderer.invoke('select-folder'),
@@ -16,8 +16,28 @@ const api = {
   onScanProgress: (cb: (p: ScanProgress) => void): void => {
     ipcRenderer.on('scan-progress', (_e, p: ScanProgress) => cb(p))
   },
+  importPaths: (paths: string[]): Promise<{ library: Track[]; added: string[] }> =>
+    ipcRenderer.invoke('import-paths', paths),
+  // Explorer drag-drop: File objects only expose absolute paths via webUtils in preload
+  getPathForFile: (file: File): string => webUtils.getPathForFile(file),
+  ffmpegStatus: (): Promise<FfmpegStatus> => ipcRenderer.invoke('ffmpeg-status'),
+  ffmpegDownload: (): Promise<boolean> => ipcRenderer.invoke('ffmpeg-download'),
+  onFfmpegProgress: (cb: (pct: number) => void): void => {
+    ipcRenderer.on('ffmpeg-progress', (_e, pct: number) => cb(pct))
+  },
+  transcode: (trackPath: string): Promise<string | null> =>
+    ipcRenderer.invoke('transcode', trackPath),
+  getArt: (trackPath: string): Promise<string | null> => ipcRenderer.invoke('get-art', trackPath),
+  analyzeLoudness: (): Promise<void> => ipcRenderer.invoke('analyze-loudness'),
+  onLufsUpdate: (cb: (u: { path: string; lufs: number; peakDb: number }) => void): void => {
+    ipcRenderer.on('lufs-update', (_e, u) => cb(u))
+  },
+  onLufsProgress: (cb: (p: ScanProgress) => void): void => {
+    ipcRenderer.on('lufs-progress', (_e, p: ScanProgress) => cb(p))
+  },
   flags: {
-    autoplay: process.env.DEV_AUTOPLAY === '1'
+    autoplay: process.env.DEV_AUTOPLAY === '1',
+    seek: Number(process.env.DEV_SEEK ?? 0)
   }
 }
 

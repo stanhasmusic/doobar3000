@@ -10,11 +10,28 @@ const el = new Audio()
 el.crossOrigin = 'anonymous'
 el.preload = 'auto'
 
+// Graph: source → levelGain (LUFS auto-level) → userGain (volume) → spectrum
+// analyser → destination, with a stereo splitter tapped off for the VU meter.
 const ctx = new AudioContext()
 const source = ctx.createMediaElementSource(el)
+const levelGain = ctx.createGain()
 const gain = ctx.createGain()
-source.connect(gain)
-gain.connect(ctx.destination)
+const spectrumAnalyser = ctx.createAnalyser()
+spectrumAnalyser.fftSize = 4096
+spectrumAnalyser.smoothingTimeConstant = 0.75
+spectrumAnalyser.minDecibels = -78
+spectrumAnalyser.maxDecibels = -22
+const splitter = ctx.createChannelSplitter(2)
+const vuAnalysers = [ctx.createAnalyser(), ctx.createAnalyser()]
+for (const a of vuAnalysers) a.fftSize = 1024
+
+source.connect(levelGain)
+levelGain.connect(gain)
+gain.connect(spectrumAnalyser)
+spectrumAnalyser.connect(ctx.destination)
+gain.connect(splitter) // analysers are taps; they don't pass audio onward
+splitter.connect(vuAnalysers[0], 0)
+splitter.connect(vuAnalysers[1], 1)
 
 export const audio = {
   // wired up by the store after creation (avoids a circular import)
@@ -44,10 +61,15 @@ export const audio = {
   setVolume(v: number): void {
     gain.gain.value = v * v // perceptual curve: linear sliders feel top-heavy
   },
+  setLevelGainDb(db: number): void {
+    levelGain.gain.value = Math.pow(10, db / 20)
+  },
   currentTime: () => el.currentTime,
   duration: () => (Number.isFinite(el.duration) ? el.duration : 0),
   context: ctx,
-  gainNode: gain
+  gainNode: gain,
+  spectrumAnalyser,
+  vuAnalysers
 }
 
 el.addEventListener('error', () => {

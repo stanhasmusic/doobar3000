@@ -1,5 +1,12 @@
 import { useState } from 'react'
 import { useStore } from '../store'
+import { ArtPanel } from './ArtPanel'
+
+export function droppedPaths(e: React.DragEvent): string[] {
+  return Array.from(e.dataTransfer.files)
+    .map((f) => window.api.getPathForFile(f))
+    .filter(Boolean)
+}
 
 export function Sidebar() {
   const playlists = useStore((s) => s.playlists)
@@ -10,6 +17,7 @@ export function Sidebar() {
 
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editName, setEditName] = useState('')
+  const [dropTarget, setDropTarget] = useState<string | null>(null)
 
   const commitRename = () => {
     if (editingId && editName.trim()) renamePlaylist(editingId, editName.trim())
@@ -42,7 +50,20 @@ export function Sidebar() {
       {playlists.map((p) => (
         <div
           key={p.id}
-          className={`side-item ${view.type === 'playlist' && view.id === p.id ? 'active' : ''}`}
+          className={`side-item ${view.type === 'playlist' && view.id === p.id ? 'active' : ''} ${
+            dropTarget === p.id ? 'drop-target' : ''
+          }`}
+          onDragOver={(e) => {
+            e.preventDefault()
+            setDropTarget(p.id)
+          }}
+          onDragLeave={() => setDropTarget(null)}
+          onDrop={(e) => {
+            e.preventDefault()
+            setDropTarget(null)
+            const paths = droppedPaths(e)
+            if (paths.length) void useStore.getState().dropOnPlaylist(p.id, paths)
+          }}
           onClick={() => setView({ type: 'playlist', id: p.id })}
           onDoubleClick={() => {
             setEditingId(p.id)
@@ -77,6 +98,8 @@ export function Sidebar() {
           </button>
         </div>
       ))}
+
+      <ArtPanel />
 
       <div className="side-footer">
         <button className="btn-import" onClick={() => void importFolder()} disabled={!!scanning}>

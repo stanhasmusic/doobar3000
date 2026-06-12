@@ -27,7 +27,11 @@ export const saveLibrary = (tracks: Track[]) => writeJson('library.json', tracks
 export const getPlaylists = () => readJson<Playlist[]>('playlists.json', [])
 export const savePlaylists = (playlists: Playlist[]) => writeJson('playlists.json', playlists)
 
-export const getSettings = () => readJson<Settings>('settings.json', { volume: 0.8 })
+const DEFAULT_SETTINGS: Settings = { volume: 0.8, levelMode: 'off' }
+export const getSettings = async (): Promise<Settings> => ({
+  ...DEFAULT_SETTINGS,
+  ...(await readJson<Partial<Settings>>('settings.json', {}))
+})
 export const saveSettings = (s: Settings) => writeJson('settings.json', s)
 
 function peaksFile(trackPath: string): string {

@@ -26,8 +26,26 @@ export async function scanFolder(
   dir: string,
   onProgress: (p: ScanProgress) => void
 ): Promise<Track[]> {
+  return scanPaths([dir], onProgress)
+}
+
+// Accepts any mix of files and folders (e.g. an Explorer drag-drop payload)
+export async function scanPaths(
+  paths: string[],
+  onProgress: (p: ScanProgress) => void
+): Promise<Track[]> {
   const files: string[] = []
-  await collectAudioFiles(dir, files)
+  for (const p of paths) {
+    try {
+      if ((await fs.stat(p)).isDirectory()) {
+        await collectAudioFiles(p, files)
+      } else if (AUDIO_EXTENSIONS.has(path.extname(p).toLowerCase())) {
+        files.push(p)
+      }
+    } catch {
+      // vanished or unreadable path: ignore
+    }
+  }
   const tracks: Track[] = []
   let done = 0
   for (const file of files) {
@@ -44,7 +62,13 @@ export async function scanFolder(
         year: c.year ?? null,
         trackNo: c.track?.no ?? null,
         duration: meta.format.duration ?? 0,
-        addedAt: Date.now()
+        addedAt: Date.now(),
+        bitrate: meta.format.bitrate ? Math.round(meta.format.bitrate / 1000) : null,
+        sampleRate: meta.format.sampleRate ?? null,
+        codec: meta.format.codec ?? null,
+        fileType: path.extname(file).slice(1).toLowerCase() || null,
+        lufs: null,
+        peakDb: null
       })
     } catch {
       // unreadable/corrupt file: skip it rather than abort the whole scan

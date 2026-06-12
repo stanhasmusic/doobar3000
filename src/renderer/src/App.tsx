@@ -5,8 +5,13 @@ import { TrackList } from './components/TrackList'
 import { WaveformBar } from './components/WaveformBar'
 import { useStore } from './store'
 
+// React StrictMode double-mounts in dev; init must run exactly once
+let initRan = false
+
 export function App() {
   useEffect(() => {
+    if (initRan) return
+    initRan = true
     void useStore
       .getState()
       .init()
@@ -19,9 +24,23 @@ export function App() {
               library.map((t) => t.path),
               0
             )
+            if (window.api.flags.seek) {
+              setTimeout(() => useStore.getState().seek(window.api.flags.seek), 2500)
+            }
           }
         }
       })
+  }, [])
+
+  useEffect(() => {
+    // stop Chromium from navigating to dropped files outside our drop zones
+    const block = (e: DragEvent) => e.preventDefault()
+    window.addEventListener('dragover', block)
+    window.addEventListener('drop', block)
+    return () => {
+      window.removeEventListener('dragover', block)
+      window.removeEventListener('drop', block)
+    }
   }, [])
 
   useEffect(() => {

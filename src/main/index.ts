@@ -1,9 +1,11 @@
 import { app, BrowserWindow, dialog, ipcMain, protocol } from 'electron'
+import { parseFile } from 'music-metadata'
 import { createReadStream } from 'node:fs'
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
 import { Readable } from 'node:stream'
-import { scanFolder } from './scanner'
+import { downloadFfmpeg, findFfmpeg, measureLoudness, transcode } from './ffmpeg'
+import { scanFolder, scanPaths } from './scanner'
 import * as store from './store'
 import type { Playlist, Settings, Track } from '../shared/types'
 
@@ -52,7 +54,7 @@ function createWindow(): void {
         const image = await win!.webContents.capturePage()
         await fs.writeFile(process.env.SCREENSHOT_PATH!, image.toPNG())
         app.quit()
-      }, 5000)
+      }, Number(process.env.SCREENSHOT_DELAY ?? 5000))
     })
   }
 }
@@ -63,18 +65,78 @@ function registerIpc(): void {
     return result.canceled ? null : result.filePaths[0]
   })
 
-  ipcMain.handle('scan-folder', async (_e, dir: string) => {
-    const found = await scanFolder(dir, (p) => win?.webContents.send('scan-progress', p))
-    // merge into existing library, new scan wins on duplicate paths
+  // merge into existing library; new scan wins on duplicate paths but keeps
+  // fields that are expensive to recreate (addedAt, loudness analysis)
+  async function mergeIntoLibrary(found: Track[]): Promise<{ library: Track[]; added: string[] }> {
     const library = await store.getLibrary()
     const byPath = new Map(library.map((t) => [t.path, t]))
     for (const t of found) {
-      const existing = byPath.get(t.path)
-      byPath.set(t.path, existing ? { ...t, addedAt: existing.addedAt } : t)
+      const old = byPath.get(t.path)
+      byPath.set(
+        t.path,
+        old ? { ...t, addedAt: old.addedAt, lufs: old.lufs ?? null, peakDb: old.peakDb ?? null } : t
+      )
     }
     const merged = [...byPath.values()]
     await store.saveLibrary(merged)
-    return merged
+    return { library: merged, added: found.map((t) => t.path) }
+  }
+
+  ipcMain.handle('scan-folder', async (_e, dir: string) => {
+    const found = await scanFolder(dir, (p) => win?.webContents.send('scan-progress', p))
+    return (await mergeIntoLibrary(found)).library
+  })
+
+  ipcMain.handle('import-paths', async (_e, paths: string[]) => {
+    const found = await scanPaths(paths, (p) => win?.webContents.send('scan-progress', p))
+    return mergeIntoLibrary(found)
+  })
+
+  ipcMain.handle('ffmpeg-status', () => findFfmpeg())
+  ipcMain.handle('ffmpeg-download', () =>
+    downloadFfmpeg((pct) => win?.webContents.send('ffmpeg-progress', pct))
+  )
+  ipcMain.handle('transcode', (_e, trackPath: string) => transcode(trackPath))
+
+  ipcMain.handle('get-art', async (_e, trackPath: string) => {
+    try {
+      const meta = await parseFile(trackPath, { skipPostHeaders: true })
+      const pic = meta.common.picture?.[0]
+      return pic ? `data:${pic.format};base64,${Buffer.from(pic.data).toString('base64')}` : null
+    } catch {
+      return null
+    }
+  })
+
+  // Background loudness analysis: walks every track missing LUFS, two at a time,
+  // streaming results to the renderer and persisting periodically.
+  let analyzing = false
+  ipcMain.handle('analyze-loudness', async () => {
+    if (analyzing || !(await findFfmpeg()).found) return
+    analyzing = true
+    try {
+      const library = await store.getLibrary()
+      const todo = library.filter((t) => t.lufs === null)
+      let done = 0
+      const queue = [...todo]
+      const worker = async (): Promise<void> => {
+        for (let t = queue.shift(); t; t = queue.shift()) {
+          const result = await measureLoudness(t.path)
+          if (result) {
+            t.lufs = result.lufs
+            t.peakDb = result.peakDb
+            win?.webContents.send('lufs-update', { path: t.path, ...result })
+          }
+          done++
+          win?.webContents.send('lufs-progress', { done, total: todo.length })
+          if (done % 10 === 0) await store.saveLibrary(library)
+        }
+      }
+      await Promise.all([worker(), worker()])
+      await store.saveLibrary(library)
+    } finally {
+      analyzing = false
+    }
   })
 
   ipcMain.handle('get-library', () => store.getLibrary())
@@ -136,10 +198,26 @@ app.whenReady().then(async () => {
 
   registerIpc()
 
-  // Dev harness: SCAN_DIR seeds the library on launch so automated runs have content
+  // Dev harness: exercises the decoder-pack download path without UI clicks
+  if (process.env.DEV_FFMPEG_DOWNLOAD) {
+    let last = -10
+    const ok = await downloadFfmpeg((pct) => {
+      if (pct >= last + 10) {
+        last = pct
+        console.log(`[ffmpeg-download] ${pct}%`)
+      }
+    })
+    console.log('[ffmpeg-download] result:', ok)
+  }
+
+  // Dev harness: SCAN_DIR seeds the library on launch so automated runs have
+  // content. Merges (keeps existing entries) so it never clobbers a real library.
   if (process.env.SCAN_DIR) {
     const tracks: Track[] = await scanFolder(process.env.SCAN_DIR, () => {})
-    await store.saveLibrary(tracks)
+    const library = await store.getLibrary()
+    const byPath = new Map(library.map((t) => [t.path, t]))
+    for (const t of tracks) if (!byPath.has(t.path)) byPath.set(t.path, t)
+    await store.saveLibrary([...byPath.values()])
   }
 
   createWindow()

@@ -9,7 +9,17 @@ export interface Track {
   trackNo: number | null
   duration: number
   addedAt: number
+  // tech fields (Phase 2+; older library entries may lack them until rescan)
+  bitrate: number | null
+  sampleRate: number | null
+  codec: string | null
+  fileType: string | null
+  // EBU R128 loudness analysis (null = not yet analyzed)
+  lufs: number | null
+  peakDb: number | null
 }
+
+export type LevelMode = 'off' | 'track' | 'album'
 
 export interface Playlist {
   id: string
@@ -19,6 +29,12 @@ export interface Playlist {
 
 export interface Settings {
   volume: number
+  levelMode: LevelMode
+}
+
+export interface FfmpegStatus {
+  found: boolean
+  source: 'app' | 'path' | null
 }
 
 export interface ScanProgress {

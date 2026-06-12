@@ -34,18 +34,21 @@ async function computePeaks(filePath: string): Promise<number[]> {
 
 export function WaveformBar() {
   const currentPath = useStore((s) => s.currentPath)
+  const playbackPath = useStore((s) => s.playbackPath)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const peaksRef = useRef<number[] | null>(null)
 
   useEffect(() => {
     peaksRef.current = null
-    if (!currentPath) return
+    if (!currentPath || !playbackPath) return
     let cancelled = false
     ;(async () => {
+      // cache key is the original path; decode source is whatever file actually
+      // plays (the transcode cache when the original is Chromium-undecodable)
       let peaks = await window.api.getPeaks(currentPath)
       if (!peaks) {
         try {
-          peaks = await computePeaks(currentPath)
+          peaks = await computePeaks(playbackPath)
           void window.api.savePeaks(currentPath, peaks)
         } catch {
           peaks = null
@@ -56,7 +59,7 @@ export function WaveformBar() {
     return () => {
       cancelled = true
     }
-  }, [currentPath])
+  }, [currentPath, playbackPath])
 
   useEffect(() => {
     let raf = 0
