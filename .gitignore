@@ -1,0 +1,7 @@
+node_modules/
+out/
+dist/
+test-music/
+Music_for_Testing/
+*.log
+.screenshot.png
