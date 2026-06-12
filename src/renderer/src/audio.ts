@@ -19,6 +19,7 @@ gain.connect(ctx.destination)
 export const audio = {
   // wired up by the store after creation (avoids a circular import)
   onEnded: () => {},
+  onError: () => {},
   onTimeUpdate: (_time: number) => {},
 
   load(filePath: string, play: boolean): void {
@@ -49,5 +50,9 @@ export const audio = {
   gainNode: gain
 }
 
+el.addEventListener('error', () => {
+  console.error(`audio element error code=${el.error?.code} msg=${el.error?.message} src=${el.src.slice(0, 120)}`)
+  audio.onError()
+})
 el.addEventListener('ended', () => audio.onEnded())
 el.addEventListener('timeupdate', () => audio.onTimeUpdate(el.currentTime))

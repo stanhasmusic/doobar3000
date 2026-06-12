@@ -41,6 +41,11 @@ function compareTracks(a: Track, b: Track, key: SortKey, dir: 1 | -1): number {
   return 0
 }
 
+function Notice() {
+  const notice = useStore((s) => s.notice)
+  return notice ? <span className="notice">{notice}&ensp;·&ensp;</span> : null
+}
+
 export function TrackList() {
   const library = useStore((s) => s.library)
   const playlists = useStore((s) => s.playlists)
@@ -158,6 +163,7 @@ export function TrackList() {
       </div>
 
       <div className="status-bar">
+        <Notice />
         {rows.length} track{rows.length === 1 ? '' : 's'}
         {playlist ? ` — ${playlist.name}` : ''}
       </div>

@@ -1,7 +1,8 @@
-import { app, BrowserWindow, dialog, ipcMain, net, protocol } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, protocol } from 'electron'
+import { createReadStream } from 'node:fs'
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
-import { pathToFileURL } from 'node:url'
+import { Readable } from 'node:stream'
 import { scanFolder } from './scanner'
 import * as store from './store'
 import type { Playlist, Settings, Track } from '../shared/types'
@@ -33,6 +34,10 @@ function createWindow(): void {
     }
   })
   win.setMenuBarVisibility(false)
+
+  if (process.env.DEBUG_LOG) {
+    win.webContents.on('console-message', (_e, _l, msg) => console.log('[renderer]', msg))
+  }
 
   if (process.env.ELECTRON_RENDERER_URL) {
     win.loadURL(process.env.ELECTRON_RENDERER_URL)
@@ -84,15 +89,49 @@ function registerIpc(): void {
 }
 
 app.whenReady().then(async () => {
+  const MIME: Record<string, string> = {
+    '.mp3': 'audio/mpeg',
+    '.m4a': 'audio/mp4',
+    '.aac': 'audio/aac',
+    '.flac': 'audio/flac',
+    '.ogg': 'audio/ogg',
+    '.opus': 'audio/ogg',
+    '.wav': 'audio/wav'
+  }
+
+  // Serves local audio with byte-range support. Ranges are mandatory: m4a/mp4
+  // files keep their index (moov atom) at the end, and Chromium will not play
+  // them without seeking. ACAO is required too: without it, Web Audio taps on a
+  // cross-origin media element output silence.
   protocol.handle('media', async (request) => {
     const filePath = decodeURIComponent(request.url.slice('media://'.length))
-    const res = await net.fetch(pathToFileURL(filePath).toString(), {
-      headers: request.headers
-    })
-    // ACAO is required: without it, Web Audio taps on a cross-origin source output silence
-    const headers = new Headers(res.headers)
-    headers.set('Access-Control-Allow-Origin', '*')
-    return new Response(res.body, { status: res.status, statusText: res.statusText, headers })
+    if (process.env.DEBUG_LOG) {
+      console.log('[media]', request.method, request.url.slice(0, 120), 'range:', request.headers.get('range'))
+    }
+    let size: number
+    try {
+      size = (await fs.stat(filePath)).size
+    } catch {
+      return new Response('not found', { status: 404 })
+    }
+    const headers: Record<string, string> = {
+      'Access-Control-Allow-Origin': '*',
+      'Accept-Ranges': 'bytes',
+      'Content-Type': MIME[path.extname(filePath).toLowerCase()] ?? 'application/octet-stream'
+    }
+    const range = /^bytes=(\d+)-(\d*)$/.exec(request.headers.get('range') ?? '')
+    if (range) {
+      const start = Number(range[1])
+      const end = range[2] ? Math.min(Number(range[2]), size - 1) : size - 1
+      if (start >= size) return new Response(null, { status: 416 })
+      headers['Content-Range'] = `bytes ${start}-${end}/${size}`
+      headers['Content-Length'] = String(end - start + 1)
+      const stream = Readable.toWeb(createReadStream(filePath, { start, end }))
+      return new Response(stream as ReadableStream, { status: 206, headers })
+    }
+    headers['Content-Length'] = String(size)
+    const stream = Readable.toWeb(createReadStream(filePath))
+    return new Response(stream as ReadableStream, { status: 200, headers })
   })
 
   registerIpc()

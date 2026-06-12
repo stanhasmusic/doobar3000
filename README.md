@@ -45,9 +45,15 @@ Dev-harness env vars (used for automated testing, safe to ignore):
 ## Architecture notes / gotchas
 
 - Local audio files are served to the renderer via a custom **`media://` protocol**
-  (`src/main/index.ts`) that proxies `net.fetch(file://…)` and adds an
-  `Access-Control-Allow-Origin` header — **without that header Web Audio outputs silence**
-  (cross-origin media elements are "tainted"). The `<audio>` element uses `crossOrigin='anonymous'`.
+  (`src/main/index.ts`) that streams from disk with **byte-range support** — mandatory, because
+  m4a/mp4 files keep their index (moov atom) at the end and Chromium won't play them without
+  seeking. It also adds an `Access-Control-Allow-Origin` header — **without that header Web
+  Audio outputs silence** (cross-origin media elements are "tainted"). The `<audio>` element
+  uses `crossOrigin='anonymous'`.
+- **ALAC (Apple Lossless) m4a files don't decode** — Chromium has no ALAC codec
+  (`DEMUXER_ERROR_NO_SUPPORTED_STREAMS`). The player shows a notice and auto-skips them.
+  The Phase 2 ffmpeg fallback will make these playable. AAC m4a files are fine.
+- `DEBUG_LOG=1` prints media protocol requests and renderer console to the terminal.
 - Streamed sources can report `duration = Infinity`; UI code falls back to the scanned
   metadata duration (see `WaveformBar.tsx`).
 - Volume is applied via the GainNode with a squared (perceptual) curve, not `el.volume`.
@@ -68,6 +74,7 @@ Dev-harness env vars (used for automated testing, safe to ignore):
 
 ## Where we left off
 
-Phase 1 complete and verified (scan → list → play → waveform → seek all tested via the
-screenshot harness with generated WAVs). Awaiting user testing with a real music collection
-before starting Phase 2.
+Phase 1 complete and verified with real files (`Music_for_Testing/`, gitignored): mp3
+scanning/playback/waveform confirmed, ALAC m4a correctly skipped with a notice. Awaiting
+user testing before starting Phase 2. First Phase 2 task: ffmpeg integration (LUFS scan +
+ALAC/exotic-format decode fallback).

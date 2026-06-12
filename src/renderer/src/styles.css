@@ -436,6 +436,10 @@ body {
   flex-shrink: 0;
 }
 
+.notice {
+  color: var(--accent);
+}
+
 /* ---------- Context menu ---------- */
 
 .context-menu {

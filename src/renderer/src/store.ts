@@ -19,6 +19,7 @@ interface State {
   volume: number
   scanning: ScanProgress | null
   selectedPath: string | null
+  notice: string | null
 
   init: () => Promise<void>
   importFolder: () => Promise<void>
@@ -56,6 +57,7 @@ export const useStore = create<State>((set, get) => ({
   volume: 0.8,
   scanning: null,
   selectedPath: null,
+  notice: null,
 
   init: async () => {
     const [library, playlists, settings] = await Promise.all([
@@ -172,6 +174,19 @@ export const useStore = create<State>((set, get) => ({
 }))
 
 audio.onEnded = () => useStore.getState().next()
+
+let noticeTimer: ReturnType<typeof setTimeout> | undefined
+audio.onError = () => {
+  const st = useStore.getState()
+  const failed = trackByPath(st.library, st.currentPath)
+  // unsupported codec (e.g. ALAC until the Phase 2 ffmpeg fallback): tell the user, move on
+  useStore.setState({
+    notice: failed ? `Can't play "${failed.title}" — unsupported format. Skipping.` : null
+  })
+  clearTimeout(noticeTimer)
+  noticeTimer = setTimeout(() => useStore.setState({ notice: null }), 5000)
+  st.next()
+}
 audio.onTimeUpdate = (time) => {
   // coarse updates for the top-bar clock; the waveform reads time via rAF directly
   if (Math.abs(time - useStore.getState().position) > 0.25) {
