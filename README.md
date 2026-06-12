@@ -17,6 +17,11 @@ Fixed, polished layout out of the box — no user-assembled panels.
   Chromium-unplayable formats (ALAC, APE, WMA, …) transparently transcode to cached FLAC
   (`%APPDATA%\doobar3000\transcode/`) and play; without it they skip with a notice.
 - **Album art panel** (bottom of sidebar) showing the current track's embedded art.
+  Click it to open a full-window enlarged view (click again or Esc to close).
+- **Level column**: while auto-leveling is on, the track list grows a right-hand
+  column showing the gain being applied to each track (e.g. −6.4 dB; "…" = not yet
+  analyzed). In Album mode, tracks that show a different gain than their album-mates
+  have a mismatched album-artist tag and got grouped separately.
 - **Drag-and-drop from Explorer**: drop files/folders onto the track list to import, or
   onto a playlist to import-and-add.
 - Scanner now records bitrate / sample rate / codec / file type (for Phase 3 columns)
@@ -93,9 +98,10 @@ media-protocol requests and renderer console to the terminal.
 ## Roadmap
 
 - **Phase 1 — MVP: DONE.** User-tested 2026-06-12, working.
-- **Phase 2 — Audio polish: DONE** (everything in "what it does today"). Verified via
+- **Phase 2 — Audio polish: DONE.** User-tested 2026-06-12, working. Verified via
   the dev harness: ALAC transcode playback, LUFS values sane (−9 to −13 LUFS on real
-  masters), visualizers live, download flow exercised end-to-end.
+  masters), visualizers live, download flow exercised end-to-end. Post-test additions
+  per user feedback: Level column + album-art lightbox.
 - **Phase 3 — Library UX + smart library**: re-arrangeable and add/remove track-list
   columns (bitrate, file type, year, …); AcoustID/MusicBrainz auto-tagging (needs free
   API key); auto-fetch missing album art (Cover Art Archive, via the same MusicBrainz IDs);
@@ -106,6 +112,7 @@ media-protocol requests and renderer console to the terminal.
 
 ## Where we left off
 
-Phase 2 complete and self-verified; awaiting user testing before Phase 3 (column
-customization, AcoustID/MusicBrainz auto-tagging + cover-art fetch, duplicate detection,
-Spotify/Apple Music links).
+Phase 2 user-tested and approved; two follow-up requests (album-art lightbox, Level
+column) implemented. Next: Phase 3 (column customization, AcoustID/MusicBrainz
+auto-tagging + cover-art fetch, duplicate detection, Spotify/Apple Music links) —
+awaiting go-ahead.

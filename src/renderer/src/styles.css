@@ -415,8 +415,39 @@ body {
   color: var(--bg-active);
 }
 
+.art-panel.zoomable {
+  cursor: zoom-in;
+}
+
 .art-panel + .side-footer {
   margin-top: 0;
+}
+
+/* full-window enlarged album art (click art panel to open, click/Esc to close) */
+.art-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  background: rgba(0, 0, 0, 0.78);
+  cursor: zoom-out;
+  -webkit-app-region: no-drag;
+}
+
+.art-lightbox img {
+  max-width: min(80vw, 80vh);
+  max-height: min(80vw, 80vh);
+  border-radius: 10px;
+  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.6);
+}
+
+.art-lightbox-caption {
+  color: var(--text-dim);
+  font-size: 13px;
 }
 
 .side-footer {
@@ -476,6 +507,18 @@ body {
   gap: 12px;
   align-items: center;
   padding: 0 16px;
+}
+
+/* extra Level column while auto-leveling is on */
+.list-header.with-level,
+.row.with-level {
+  grid-template-columns: 44px minmax(180px, 2fr) minmax(120px, 1.3fr) minmax(120px, 1.3fr) minmax(70px, 0.8fr) 64px 70px;
+}
+
+.col-level {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-faint);
 }
 
 .list-header {

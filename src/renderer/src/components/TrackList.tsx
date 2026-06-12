@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Track } from '../../../shared/types'
-import { formatTime, useStore, type SortKey } from '../store'
+import { formatDb, formatTime, levelingDbMap, useStore, type SortKey } from '../store'
 import { droppedPaths } from './Sidebar'
 
 const ROW_HEIGHT = 34
@@ -55,6 +55,7 @@ export function TrackList() {
   const sortDir = useStore((s) => s.sortDir)
   const currentPath = useStore((s) => s.currentPath)
   const selectedPath = useStore((s) => s.selectedPath)
+  const levelMode = useStore((s) => s.levelMode)
   const { playQueue, setSort, setSelected, addToPlaylist, removeFromPlaylist } =
     useStore.getState()
 
@@ -75,6 +76,10 @@ export function TrackList() {
     }
     return [...library].sort((a, b) => compareTracks(a, b, sortKey, sortDir))
   }, [library, playlist, isPlaylist, sortKey, sortDir])
+
+  // Level column data: gain the auto-leveler applies per track (shown while leveling is on)
+  const showLevel = levelMode !== 'off'
+  const levelDbs = useMemo(() => levelingDbMap(library, levelMode), [library, levelMode])
 
   useEffect(() => {
     const el = containerRef.current
@@ -122,7 +127,7 @@ export function TrackList() {
 
   return (
     <div className="tracklist" {...dropProps}>
-      <div className="list-header">
+      <div className={`list-header ${showLevel ? 'with-level' : ''}`}>
         {COLUMNS.map((c) => (
           <div
             key={c.key}
@@ -135,6 +140,11 @@ export function TrackList() {
             )}
           </div>
         ))}
+        {showLevel && (
+          <div className="col-level" title="Gain applied by auto-leveling">
+            Level
+          </div>
+        )}
       </div>
 
       <div
@@ -151,7 +161,7 @@ export function TrackList() {
                 key={`${t.path}-${index}`}
                 className={`row ${isCurrent ? 'current' : ''} ${
                   t.path === selectedPath ? 'selected' : ''
-                } ${index % 2 ? 'odd' : ''}`}
+                } ${index % 2 ? 'odd' : ''} ${showLevel ? 'with-level' : ''}`}
                 style={{ top: index * ROW_HEIGHT }}
                 onClick={() => setSelected(t.path)}
                 onDoubleClick={() => playRow(index)}
@@ -167,6 +177,11 @@ export function TrackList() {
                 <div className="col-album">{t.album}</div>
                 <div className="col-genre">{t.genre}</div>
                 <div className="col-time">{formatTime(t.duration)}</div>
+                {showLevel && (
+                  <div className="col-level">
+                    {levelDbs.has(t.path) ? formatDb(levelDbs.get(t.path)!) : '…'}
+                  </div>
+                )}
               </div>
             )
           })}

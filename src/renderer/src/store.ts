@@ -4,31 +4,45 @@ import { audio } from './audio'
 
 const LUFS_TARGET = -18 // ReplayGain 2.0 reference loudness
 
-// Gain to apply for the current leveling mode. Album mode computes one gain for
+const clampGain = (gainDb: number, headroom: number): number =>
+  Math.max(-24, Math.min(gainDb, Math.max(headroom, 0), 12))
+
+// Gain per track path for a leveling mode. Album mode computes one gain for
 // the whole album (energy-weighted average loudness), so tracks keep their
 // relative dynamics; the gain is capped so no track on the album would clip.
-function levelingDb(track: Track | undefined, mode: LevelMode, library: Track[]): number {
-  if (!track || mode === 'off' || track.lufs === null) return 0
-  let gainDb: number
-  let headroom: number
-  if (mode === 'album') {
-    const albumTracks = library.filter(
-      (t) => t.album === track.album && t.albumArtist === track.albumArtist && t.lufs !== null
-    )
-    if (!albumTracks.length) return 0
+// Exported so the track list's Level column can show what's being applied.
+export function levelingDbMap(library: Track[], mode: LevelMode): Map<string, number> {
+  const map = new Map<string, number>()
+  if (mode === 'off') return map
+  if (mode === 'track') {
+    for (const t of library) {
+      if (t.lufs !== null) map.set(t.path, clampGain(LUFS_TARGET - t.lufs, -1 - (t.peakDb ?? 0)))
+    }
+    return map
+  }
+  const albums = new Map<string, Track[]>()
+  for (const t of library) {
+    if (t.lufs === null) continue
+    const key = `${t.albumArtist}|${t.album}`
+    albums.get(key)?.push(t) ?? albums.set(key, [t])
+  }
+  for (const tracks of albums.values()) {
     let energy = 0
     let dur = 0
-    for (const t of albumTracks) {
+    for (const t of tracks) {
       energy += t.duration * Math.pow(10, t.lufs! / 10)
       dur += t.duration
     }
-    gainDb = LUFS_TARGET - 10 * Math.log10(energy / Math.max(dur, 1))
-    headroom = Math.min(...albumTracks.map((t) => -1 - (t.peakDb ?? 0)))
-  } else {
-    gainDb = LUFS_TARGET - track.lufs
-    headroom = -1 - (track.peakDb ?? 0)
+    const gainDb = LUFS_TARGET - 10 * Math.log10(energy / Math.max(dur, 1))
+    const headroom = Math.min(...tracks.map((t) => -1 - (t.peakDb ?? 0)))
+    for (const t of tracks) map.set(t.path, clampGain(gainDb, headroom))
   }
-  return Math.max(-24, Math.min(gainDb, Math.max(headroom, 0), 12))
+  return map
+}
+
+function levelingDb(track: Track | undefined, mode: LevelMode, library: Track[]): number {
+  if (!track) return 0
+  return levelingDbMap(library, mode).get(track.path) ?? 0
 }
 
 export type View = { type: 'library' } | { type: 'playlist'; id: string }
@@ -328,6 +342,10 @@ audio.onTimeUpdate = (time) => {
 
 export function trackByPath(library: Track[], path: string | null): Track | undefined {
   return path ? library.find((t) => t.path === path) : undefined
+}
+
+export function formatDb(db: number): string {
+  return `${db >= 0 ? '+' : '−'}${Math.abs(db).toFixed(1)} dB`
 }
 
 export function formatTime(s: number): string {

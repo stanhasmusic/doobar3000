@@ -7,6 +7,7 @@ export function ArtPanel() {
   const currentPath = useStore((s) => s.currentPath)
   const library = useStore((s) => s.library)
   const [art, setArt] = useState<string | null>(null)
+  const [zoom, setZoom] = useState(false)
 
   const track = trackByPath(library, currentPath)
   const albumKey = track ? `${track.albumArtist}|${track.album}` : null
@@ -31,14 +32,35 @@ export function ArtPanel() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [albumKey])
 
+  useEffect(() => {
+    if (!zoom) return
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setZoom(false)
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [zoom])
+
   if (!track) return null
   return (
-    <div className="art-panel">
-      {art ? (
-        <img src={art} alt={track.album} draggable={false} />
-      ) : (
-        <div className="art-empty">♫</div>
+    <>
+      <div
+        className={`art-panel ${art ? 'zoomable' : ''}`}
+        onClick={() => art && setZoom(true)}
+        title={art ? 'Click to enlarge' : undefined}
+      >
+        {art ? (
+          <img src={art} alt={track.album} draggable={false} />
+        ) : (
+          <div className="art-empty">♫</div>
+        )}
+      </div>
+      {zoom && art && (
+        <div className="art-lightbox" onClick={() => setZoom(false)}>
+          <img src={art} alt={track.album} draggable={false} />
+          <div className="art-lightbox-caption">
+            {track.album} — {track.albumArtist || track.artist}
+          </div>
+        </div>
       )}
-    </div>
+    </>
   )
 }
