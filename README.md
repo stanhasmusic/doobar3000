@@ -21,6 +21,15 @@ Electron + React + TypeScript.
 - 🎨 **Themes** — Dark / Light / Midnight / Sepia presets plus a custom accent color.
 - 🔁 Shuffle + repeat, customizable & reorderable columns, duplicate detection, waveform seek.
 
+## Themes
+
+Four built-in color schemes — **Dark**, **Light**, **Midnight**, **Sepia** — plus a custom
+accent picker. The spectrum analyzer and waveform seek-bar follow the active theme.
+
+| Light | Sepia |
+| :---: | :---: |
+| ![Light theme](docs/screenshot-light.png) | ![Sepia theme](docs/screenshot-sepia.png) |
+
 ## Quick start
 
 ```
