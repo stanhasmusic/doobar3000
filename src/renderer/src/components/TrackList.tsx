@@ -70,7 +70,12 @@ export function TrackList() {
   const [colMenu, setColMenu] = useState<{ x: number; y: number } | null>(null)
   const [identifyFor, setIdentifyFor] = useState<Track | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
-  const dragKey = useRef<ColumnKey | null>(null)
+  const [drag, setDrag] = useState<{
+    key: ColumnKey
+    x: number
+    y: number
+    over: ColumnKey | null
+  } | null>(null)
 
   const isPlaylist = view.type === 'playlist'
   const playlist = isPlaylist ? playlists.find((p) => p.id === view.id) : undefined
@@ -131,14 +136,45 @@ export function TrackList() {
     }
   }
 
-  // drag a header onto another to reorder columns
-  const onColDrop = (target: ColumnKey) => {
-    const from = dragKey.current
-    dragKey.current = null
-    if (!from || from === target) return
-    const next = columns.filter((k) => k !== from)
-    next.splice(next.indexOf(target), 0, from)
+  const reorderColumns = (from: ColumnKey, to: ColumnKey) => {
+    if (from === to) return
+    const cur = useStore.getState().columns
+    const next = cur.filter((k) => k !== from)
+    next.splice(next.indexOf(to), 0, from)
     setColumns(next)
+  }
+
+  const colAt = (x: number, y: number): ColumnKey | null =>
+    (document.elementFromPoint(x, y)?.closest('[data-colkey]')?.getAttribute('data-colkey') ??
+      null) as ColumnKey | null
+
+  // Pointer-based header drag: a floating label follows the cursor and the column
+  // it's over animates. A plain press with no movement falls through to sorting.
+  const headerPointerDown = (e: React.PointerEvent, key: ColumnKey) => {
+    if (e.button !== 0) return
+    e.preventDefault()
+    const sx = e.clientX
+    const sy = e.clientY
+    let moved = false
+    const move = (ev: PointerEvent) => {
+      if (!moved && Math.hypot(ev.clientX - sx, ev.clientY - sy) < 5) return
+      moved = true
+      const over = colAt(ev.clientX, ev.clientY)
+      setDrag({ key, x: ev.clientX, y: ev.clientY, over: over && over !== key ? over : null })
+    }
+    const up = (ev: PointerEvent) => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', up)
+      if (moved) {
+        const over = colAt(ev.clientX, ev.clientY)
+        if (over) reorderColumns(key, over)
+      } else if (!isPlaylist && COLUMN_DEFS[key].sortable) {
+        setSort(key as SortKey)
+      }
+      setDrag(null)
+    }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up)
   }
 
   const toggleColumn = (key: ColumnKey) => {
@@ -176,12 +212,11 @@ export function TrackList() {
           return (
             <div
               key={key}
-              className={`${def.className} ${canSort ? 'sortable' : ''}`}
-              draggable
-              onDragStart={() => (dragKey.current = key)}
-              onDragOver={(e) => e.preventDefault()}
-              onDrop={() => onColDrop(key)}
-              onClick={() => canSort && setSort(key as SortKey)}
+              data-colkey={key}
+              className={`${def.className} ${canSort ? 'sortable' : ''} ${
+                drag?.key === key ? 'col-dragging' : ''
+              } ${drag?.over === key ? 'col-over' : ''}`}
+              onPointerDown={(e) => headerPointerDown(e, key)}
             >
               {def.label}
               {canSort && sortKey === key && (
@@ -298,6 +333,12 @@ export function TrackList() {
               {COLUMN_DEFS[key].label}
             </div>
           ))}
+        </div>
+      )}
+
+      {drag && (
+        <div className="col-ghost" style={{ left: drag.x, top: drag.y }}>
+          {COLUMN_DEFS[drag.key].label}
         </div>
       )}
 

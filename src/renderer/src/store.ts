@@ -403,7 +403,9 @@ export const useStore = create<State>((set, get) => ({
 audio.onEnded = () => useStore.getState().next()
 
 // dev-only: lets the screenshot harness (DEV_EVAL) drive the store
-if (import.meta.env.DEV) (window as unknown as { useStore: typeof useStore }).useStore = useStore
+if ((import.meta as { env?: { DEV?: boolean } }).env?.DEV) {
+  ;(window as unknown as { useStore: typeof useStore }).useStore = useStore
+}
 
 let noticeTimer: ReturnType<typeof setTimeout> | undefined
 

@@ -536,12 +536,52 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
-.list-header [draggable='true'] {
+.list-header > div {
   cursor: grab;
+  user-select: none;
+  transition: transform 0.14s ease, color 0.14s ease, box-shadow 0.14s ease;
 }
 
-.list-header [draggable='true'].sortable {
-  cursor: pointer;
+/* the column being dragged fades out of the header... */
+.col-dragging {
+  opacity: 0.3;
+  cursor: grabbing;
+}
+
+/* ...and the column it's hovering over reacts: lifts, tints, shows an insert bar */
+.col-over {
+  color: var(--accent);
+  transform: scale(1.07);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+/* the floating label that follows the cursor while reordering */
+.col-ghost {
+  position: fixed;
+  z-index: 300;
+  pointer-events: none;
+  padding: 5px 11px;
+  border-radius: 6px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.55);
+  animation: ghost-bob 1.2s ease-in-out infinite;
+}
+
+@keyframes ghost-bob {
+  0% {
+    transform: translate(-50%, -150%) rotate(-3deg) translateY(0);
+  }
+  50% {
+    transform: translate(-50%, -150%) rotate(-3deg) translateY(-4px);
+  }
+  100% {
+    transform: translate(-50%, -150%) rotate(-3deg) translateY(0);
+  }
 }
 
 .list-header {
