@@ -1,11 +1,20 @@
 import { useEffect, useRef, useState } from 'react'
-import type { LevelMode } from '../../../shared/types'
+import type { LevelMode, Theme } from '../../../shared/types'
 import { useStore } from '../store'
 
 const MODES: { value: LevelMode; label: string }[] = [
   { value: 'off', label: 'Off' },
   { value: 'track', label: 'Track' },
   { value: 'album', label: 'Album' }
+]
+
+// bg/accent here are just the swatch preview; the real palettes live in styles.css
+const THEMES: { value: Theme; label: string; bg: string; accent: string }[] = [
+  { value: 'dark', label: 'Dark', bg: '#141417', accent: '#e0556e' },
+  { value: 'light', label: 'Light', bg: '#f3f3f6', accent: '#d6315a' },
+  { value: 'midnight', label: 'Midnight', bg: '#0d1117', accent: '#2fa6b8' },
+  { value: 'sepia', label: 'Sepia', bg: '#efe7d6', accent: '#a3592a' },
+  { value: 'custom', label: 'Custom', bg: '#141417', accent: '#e0556e' }
 ]
 
 export function SettingsMenu() {
@@ -19,7 +28,10 @@ export function SettingsMenu() {
   const acoustidKey = useStore((s) => s.acoustidKey)
   const fpcalcFound = useStore((s) => s.fpcalcFound)
   const fpcalcInstalling = useStore((s) => s.fpcalcInstalling)
-  const { setLevelMode, downloadFfmpeg, setAcoustidKey, downloadFpcalc } = useStore.getState()
+  const theme = useStore((s) => s.theme)
+  const accentColor = useStore((s) => s.accentColor)
+  const { setLevelMode, downloadFfmpeg, setAcoustidKey, downloadFpcalc, setTheme, setAccentColor } =
+    useStore.getState()
 
   useEffect(() => {
     if (!open) return
@@ -42,6 +54,47 @@ export function SettingsMenu() {
       </button>
       {open && (
         <div className="settings-pop">
+          <div className="set-title">Color scheme</div>
+          <div className="theme-grid">
+            {THEMES.map((t) => (
+              <button
+                key={t.value}
+                className={`theme-swatch ${theme === t.value ? 'on' : ''}`}
+                title={t.label}
+                style={{ background: t.bg }}
+                onClick={() => setTheme(t.value)}
+              >
+                <span
+                  className="theme-dot"
+                  style={{ background: t.value === 'custom' ? accentColor || t.accent : t.accent }}
+                />
+                {t.label}
+              </button>
+            ))}
+          </div>
+          {theme === 'custom' && (
+            <div className="set-row custom-color">
+              <input
+                type="color"
+                value={/^#[0-9a-fA-F]{6}$/.test(accentColor) ? accentColor : '#e0556e'}
+                onChange={(e) => setAccentColor(e.target.value)}
+              />
+              <input
+                className="set-input"
+                type="text"
+                placeholder="#e0556e"
+                value={accentColor}
+                spellCheck={false}
+                onChange={(e) => setAccentColor(e.target.value.trim())}
+              />
+            </div>
+          )}
+          <div className="set-hint">
+            {theme === 'custom'
+              ? 'Custom uses the dark base with your accent color — pick from the wheel or type a hex code.'
+              : 'Light, dark, and a couple of modern/classic palettes.'}
+          </div>
+
           <div className="set-title">Auto-level volume</div>
           <div className="set-row seg">
             {MODES.map((m) => (

@@ -31,9 +31,13 @@ const DEFAULT_SETTINGS: Settings = {
   volume: 0.8,
   levelMode: 'off',
   columns: ['trackNo', 'title', 'artist', 'album', 'genre', 'duration', 'level'],
+  // Bring-your-own AcoustID key: users paste a free application key in ⚙ (it
+  // persists in settings.json). Never commit a real key here — it's public-repo source.
   acoustidKey: '',
   shuffle: false,
-  repeat: 'off'
+  repeat: 'off',
+  theme: 'dark',
+  accentColor: '#e0556e'
 }
 export const getSettings = async (): Promise<Settings> => ({
   ...DEFAULT_SETTINGS,

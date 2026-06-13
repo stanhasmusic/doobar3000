@@ -21,6 +21,7 @@ export interface Track {
 
 export type LevelMode = 'off' | 'track' | 'album'
 export type RepeatMode = 'off' | 'all' | 'one'
+export type Theme = 'dark' | 'light' | 'midnight' | 'sepia' | 'custom'
 
 export interface Playlist {
   id: string
@@ -52,6 +53,10 @@ export interface Settings {
   acoustidKey: string
   shuffle: boolean
   repeat: RepeatMode
+  /** app color scheme */
+  theme: Theme
+  /** accent color (hex) used when theme === 'custom' */
+  accentColor: string
 }
 
 /** one tag proposal from an AcoustID/MusicBrainz lookup */

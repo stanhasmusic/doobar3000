@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { audio } from '../audio'
+import { vizColors } from '../store'
 
 function useCanvasLoop(draw: (g: CanvasRenderingContext2D, w: number, h: number) => void) {
   const ref = useRef<HTMLCanvasElement>(null)
@@ -41,9 +42,9 @@ export function Spectrum() {
     const binHz = audio.context.sampleRate / 2 / analyser.frequencyBinCount
     const barW = w / BARS
     const grad = g.createLinearGradient(0, h, 0, 0)
-    grad.addColorStop(0, '#8a3b50')
-    grad.addColorStop(0.6, '#e0556e')
-    grad.addColorStop(1, '#ff9aa8')
+    grad.addColorStop(0, vizColors.accentDark)
+    grad.addColorStop(0.6, vizColors.accent)
+    grad.addColorStop(1, vizColors.accentLight)
     g.fillStyle = grad
     for (let i = 0; i < BARS; i++) {
       // log-spaced frequency band for this bar
@@ -84,8 +85,9 @@ export function VuMeter() {
       const peakFrac = Math.max(0, Math.min(1, (peaks.current[ch] - VU_FLOOR) / -VU_FLOOR))
       const y = gap + ch * (barH + gap)
 
-      g.fillStyle = '#2a2a31'
+      g.fillStyle = vizColors.track
       g.fillRect(0, y, w, barH)
+      // level-coded gradient (green→amber→red) stays constant across themes
       const grad = g.createLinearGradient(0, 0, w, 0)
       grad.addColorStop(0, '#3ddc84')
       grad.addColorStop(0.72, '#3ddc84')
@@ -94,7 +96,7 @@ export function VuMeter() {
       g.fillStyle = grad
       g.fillRect(0, y, w * frac, barH)
       if (peakFrac > 0.01) {
-        g.fillStyle = '#fff'
+        g.fillStyle = vizColors.text
         g.fillRect(w * peakFrac - 1, y, 2, barH)
       }
     })

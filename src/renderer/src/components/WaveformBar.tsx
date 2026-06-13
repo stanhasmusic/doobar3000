@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { audio, toMediaUrl } from '../audio'
-import { trackByPath, useStore } from '../store'
+import { trackByPath, useStore, vizColors } from '../store'
 
 const BUCKETS = 1200
 
@@ -86,9 +86,9 @@ export function WaveformBar() {
 
       if (!peaks) {
         // no waveform yet: flat progress line
-        g.fillStyle = '#2a2a30'
+        g.fillStyle = vizColors.track
         g.fillRect(0, h / 2 - 1, w, 2)
-        g.fillStyle = '#e0556e'
+        g.fillStyle = vizColors.accent
         g.fillRect(0, h / 2 - 1, w * progress, 2)
         return
       }
@@ -101,11 +101,11 @@ export function WaveformBar() {
         const x = i * barW
         const amp = Math.max(0.015, peaks[i] * 0.92)
         const bh = amp * (h - 6)
-        g.fillStyle = x < playedX ? '#e0556e' : '#45454e'
+        g.fillStyle = x < playedX ? vizColors.accent : vizColors.faint
         g.fillRect(x, mid - bh / 2, Math.max(1, barW - 0.5), bh)
       }
       // playhead
-      g.fillStyle = '#ffffff'
+      g.fillStyle = vizColors.text
       g.fillRect(playedX - 0.5, 2, 1, h - 4)
     }
     raf = requestAnimationFrame(draw)

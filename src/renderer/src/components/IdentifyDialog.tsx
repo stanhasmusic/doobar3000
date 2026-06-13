@@ -71,7 +71,14 @@ export function IdentifyDialog({ track, onClose }: { track: Track; onClose: () =
         ) : !result.ok ? (
           <div className="modal-body muted">{result.error}</div>
         ) : result.candidates.length === 0 ? (
-          <div className="modal-body muted">No matches found for this recording.</div>
+          <div className="modal-body muted">
+            <p>No match in the AcoustID database for this file.</p>
+            <p>
+              That usually means this exact recording hasn’t been fingerprinted by anyone
+              yet — common for rare, live, remastered, or personal recordings — rather than a
+              problem with your tags. A more widely-released version of the track may match.
+            </p>
+          </div>
         ) : (
           <div className="modal-body candidates">
             {result.candidates.map((c, i) => (

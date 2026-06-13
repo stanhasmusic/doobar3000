@@ -159,11 +159,15 @@ export function TrackList() {
     }
   }
 
-  const reorderColumns = (from: ColumnKey, to: ColumnKey) => {
-    if (from === to) return
+  // True swap: the dragged column and its target trade places; nothing else moves.
+  const swapColumns = (a: ColumnKey, b: ColumnKey) => {
+    if (a === b) return
     const cur = useStore.getState().columns
-    const next = cur.filter((k) => k !== from)
-    next.splice(next.indexOf(to), 0, from)
+    const ia = cur.indexOf(a)
+    const ib = cur.indexOf(b)
+    if (ia < 0 || ib < 0) return
+    const next = [...cur]
+    ;[next[ia], next[ib]] = [next[ib], next[ia]]
     setColumns(next)
   }
 
@@ -190,7 +194,7 @@ export function TrackList() {
       window.removeEventListener('pointerup', up)
       if (moved) {
         const over = colAt(ev.clientX, ev.clientY)
-        if (over) reorderColumns(key, over)
+        if (over) swapColumns(key, over)
       } else if (sortableList && COLUMN_DEFS[key].sortable) {
         setSort(key as SortKey)
       }
@@ -232,13 +236,17 @@ export function TrackList() {
         {columns.map((key) => {
           const def = COLUMN_DEFS[key]
           const canSort = sortableList && def.sortable
+          // the target leans toward the dragged column's slot — the way it'll travel on a swap
+          const isOver = drag?.over === key
+          const overDir =
+            isOver && drag ? Math.sign(columns.indexOf(drag.key) - columns.indexOf(key)) : 0
           return (
             <div
               key={key}
               data-colkey={key}
               className={`${def.className} ${canSort ? 'sortable' : ''} ${
                 drag?.key === key ? 'col-dragging' : ''
-              } ${drag?.over === key ? 'col-over' : ''}`}
+              } ${isOver ? `col-over col-over-${overDir > 0 ? 'right' : 'left'}` : ''}`}
               onPointerDown={(e) => headerPointerDown(e, key)}
             >
               {def.label}
