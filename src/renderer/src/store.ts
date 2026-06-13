@@ -53,7 +53,11 @@ function levelingDb(track: Track | undefined, mode: LevelMode, library: Track[])
   return levelingDbMap(library, mode).get(track.path) ?? 0
 }
 
-export type View = { type: 'library' } | { type: 'playlist'; id: string } | { type: 'duplicates' }
+export type View =
+  | { type: 'library' }
+  | { type: 'playlist'; id: string }
+  | { type: 'duplicates' }
+  | { type: 'smart'; id: string }
 // every column except Level (whose value depends on the leveling mode) is sortable
 export type SortKey = Exclude<ColumnKey, 'level'>
 

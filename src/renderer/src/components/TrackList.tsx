@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ColumnKey, Track } from '../../../shared/types'
 import { levelingDbMap, useStore, type SortKey } from '../store'
 import { ALL_COLUMNS, cellValue, COLUMN_DEFS } from '../columns'
+import { resolveSmart, smartName } from '../smartPlaylists'
 import { droppedPaths } from './Sidebar'
 import { IdentifyDialog } from './IdentifyDialog'
 
@@ -79,16 +80,32 @@ export function TrackList() {
 
   const isPlaylist = view.type === 'playlist'
   const playlist = isPlaylist ? playlists.find((p) => p.id === view.id) : undefined
+  const smartId = view.type === 'smart' ? view.id : null
 
-  const rows: Track[] = useMemo(() => {
+  // `sortableList` gates the clickable column headers: manual playlists and the
+  // Recently-Added smart list keep their own order; everything else sorts.
+  const { rows, sortableList } = useMemo<{ rows: Track[]; sortableList: boolean }>(() => {
     if (playlist) {
       const byPath = new Map(library.map((t) => [t.path, t]))
-      return playlist.trackPaths
-        .map((p) => byPath.get(p))
-        .filter((t): t is Track => t !== undefined)
+      return {
+        rows: playlist.trackPaths
+          .map((p) => byPath.get(p))
+          .filter((t): t is Track => t !== undefined),
+        sortableList: false
+      }
     }
-    return [...library].sort((a, b) => compareTracks(a, b, sortKey, sortDir))
-  }, [library, playlist, isPlaylist, sortKey, sortDir])
+    if (smartId) {
+      const r = resolveSmart(smartId, library)
+      return {
+        rows: r.sortable ? [...r.tracks].sort((a, b) => compareTracks(a, b, sortKey, sortDir)) : r.tracks,
+        sortableList: r.sortable
+      }
+    }
+    return {
+      rows: [...library].sort((a, b) => compareTracks(a, b, sortKey, sortDir)),
+      sortableList: true
+    }
+  }, [library, playlist, smartId, sortKey, sortDir])
 
   const levelDbs = useMemo(() => levelingDbMap(library, levelMode), [library, levelMode])
   const gridTemplate = useMemo(
@@ -174,7 +191,7 @@ export function TrackList() {
       if (moved) {
         const over = colAt(ev.clientX, ev.clientY)
         if (over) reorderColumns(key, over)
-      } else if (!isPlaylist && COLUMN_DEFS[key].sortable) {
+      } else if (sortableList && COLUMN_DEFS[key].sortable) {
         setSort(key as SortKey)
       }
       setDrag(null)
@@ -214,7 +231,7 @@ export function TrackList() {
       >
         {columns.map((key) => {
           const def = COLUMN_DEFS[key]
-          const canSort = !isPlaylist && def.sortable
+          const canSort = sortableList && def.sortable
           return (
             <div
               key={key}
@@ -271,7 +288,7 @@ export function TrackList() {
       <div className="status-bar">
         <Notice />
         {rows.length} track{rows.length === 1 ? '' : 's'}
-        {playlist ? ` — ${playlist.name}` : ''}
+        {playlist ? ` — ${playlist.name}` : smartId ? ` — ${smartName(smartId)}` : ''}
       </div>
 
       {menu && (

@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useStore } from '../store'
+import { smartPlaylists } from '../smartPlaylists'
 import { ArtPanel } from './ArtPanel'
 
 export function droppedPaths(e: React.DragEvent): string[] {
@@ -10,10 +11,13 @@ export function droppedPaths(e: React.DragEvent): string[] {
 
 export function Sidebar() {
   const playlists = useStore((s) => s.playlists)
+  const library = useStore((s) => s.library)
   const view = useStore((s) => s.view)
   const scanning = useStore((s) => s.scanning)
   const { setView, createPlaylist, renamePlaylist, deletePlaylist, importFolder } =
     useStore.getState()
+
+  const smart = useMemo(() => smartPlaylists(library), [library])
 
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editName, setEditName] = useState('')
@@ -39,6 +43,24 @@ export function Sidebar() {
       >
         <span className="side-icon">⧉</span> Duplicates
       </div>
+
+      {smart.length > 0 && (
+        <>
+          <div className="side-section">SMART</div>
+          {smart.map((sp) => (
+            <div
+              key={sp.id}
+              className={`side-item ${
+                view.type === 'smart' && view.id === sp.id ? 'active' : ''
+              }`}
+              onClick={() => setView({ type: 'smart', id: sp.id })}
+            >
+              <span className="side-icon">{sp.icon}</span>
+              <span className="side-name">{sp.name}</span>
+            </div>
+          ))}
+        </>
+      )}
 
       <div className="side-section">
         PLAYLISTS

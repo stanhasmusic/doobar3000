@@ -3,7 +3,16 @@
 A native Windows music player: **iTunes-simple to use, foobar2000-powerful under the hood.**
 Fixed, polished layout out of the box — no user-assembled panels.
 
-## What it does today (end of Phase 3)
+## What it does today (Phase 4)
+
+- **Smart playlists**: a "SMART" sidebar section, auto-generated from your tags and
+  kept up to date as the library changes (import / remove / retag — no "regenerate"
+  button). It lists **Recently Added** (50 newest by import time), one playlist **per
+  Genre** (busiest first), and one **per decade** (e.g. 1990s). Genre/decade lists sort
+  like the main library; Recently Added stays newest-first. (Audio-"vibe" playlists from
+  the actual sound are a planned later pass.)
+
+## What it did as of Phase 3
 
 - **Customizable columns**: right-click the track-list header for a column picker
   (add/remove #, Title, Artist, Album Artist, Album, Genre, Year, Time, Bitrate,
@@ -152,10 +161,17 @@ prints media-protocol requests and renderer console to the terminal.
 - **Playback modes (shuffle / repeat-all / repeat-one): DONE** 2026-06-13. Queue now
   traverses a `order: number[]` / `orderPos` play-order layer (identity when not shuffled);
   logic verified headless (shuffle keeps current at front, repeat-all wraps, cycle order).
-- **Phase 4 — Stretch**: auto-playlists by genre/vibe. (Chat-assistant panel dropped per
-  user, 2026-06-13.)
+- **Phase 4 — Auto-playlists (tag-based): DONE** 2026-06-13. Smart playlists derived live
+  from tags (Recently Added + per-genre + per-decade), auto-updating, in a SMART sidebar
+  section (`src/renderer/src/smartPlaylists.ts`). Self-verified via the harness against the
+  real library: SMART section populates (genres by count, decades), the genre view filters
+  correctly (e.g. "12 tracks — Trip-Hop") and stays sortable. (Chat-assistant panel dropped
+  per user, 2026-06-13.)
+- **Phase 4.5 — Audio "vibe" playlists**: cluster tracks by analyzed sound
+  (energy / tempo / brightness). Not started — needs a per-track DSP analysis pass.
 - **Final polish**: revisit color scheme/theming (palette lives in CSS variables at the
-  top of `styles.css`).
+  top of `styles.css`); space the top-right controls off the Windows caption buttons;
+  possibly resizable spectrum/VU meters.
 
 ## Where we left off
 
@@ -166,13 +182,19 @@ inputs: **auto-tag identification** (paste a free AcoustID key in ⚙, then righ
 track → Identify) and **online cover-art fetch** (play a track with no embedded art but
 clean album/artist tags — watch the art panel fill in).
 
-Playback modes (shuffle/repeat) shipped 2026-06-13. Remaining (awaiting Stan's go on
-order): **Phase 4 (stretch)** auto-playlists by genre/vibe (chat-assistant panel dropped);
-and the **final-polish** pass — color scheme (CSS vars top of `styles.css`), spacing the
-top-right controls away from the Windows caption buttons, and possibly resizable
-spectrum/VU meters (recommended a splitter handle between the two meters, or S/M/L size
-presets, over per-meter edge-drag).
+Playback modes (shuffle/repeat) shipped 2026-06-13. Phase 4 tag-based smart playlists
+shipped 2026-06-13 (also fixed a virtualization bug where the track list didn't fill the
+viewport — the ResizeObserver was attached in a mount effect that ran before the list
+existed; now a callback ref attaches it when the scroll element mounts).
+
+Remaining (awaiting Stan's go on order): **Phase 4.5** audio-"vibe" playlists (cluster by
+analyzed sound — needs a per-track DSP pass, not yet started); and the **final-polish**
+pass — color scheme (CSS vars top of `styles.css`), spacing the top-right controls away
+from the Windows caption buttons, and possibly resizable spectrum/VU meters (recommended a
+splitter handle between the two meters, or S/M/L size presets, over per-meter edge-drag).
 
 New Phase-3 source files: `src/renderer/src/columns.tsx` (column registry + cell
 rendering), `src/renderer/src/components/IdentifyDialog.tsx`,
 `src/renderer/src/components/DuplicatesView.tsx`, `src/main/acoustid.ts`, `src/main/art.ts`.
+New Phase-4 source file: `src/renderer/src/smartPlaylists.ts` (derives + resolves smart
+playlists; pure function of `library`, which is what makes them auto-update).
