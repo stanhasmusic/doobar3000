@@ -7,7 +7,7 @@ Electron + React + TypeScript.
 > **Status:** developed in phases; the core player, audio polish, library UX, smart
 > playlists, and theming are in. See the [roadmap](#roadmap) for what's next.
 
-<!-- TODO: add a screenshot, e.g. ![Doobar 3000](docs/screenshot.png) -->
+![Doobar 3000 — dark theme](docs/screenshot.png)
 
 ## Highlights
 
