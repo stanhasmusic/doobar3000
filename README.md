@@ -146,7 +146,10 @@ prints media-protocol requests and renderer console to the terminal.
   prompt; the AcoustID/fpcalc settings render and the fpcalc download installed
   end-to-end. **Awaiting user testing** — needs a real AcoustID key to exercise actual
   tag identification, and a track lacking embedded art to exercise online art fetch.
-- **Phase 4 — Stretch**: auto-playlists by genre/vibe; possibly a chat assistant panel.
+- **Playback modes (shuffle / repeat-all / repeat-one)** — not yet built and were never
+  actually in a phase; small core addition to slot in around Phase 4. (User flagged this.)
+- **Phase 4 — Stretch**: auto-playlists by genre/vibe. (Chat-assistant panel dropped per
+  user, 2026-06-13.)
 - **Final polish**: revisit color scheme/theming (palette lives in CSS variables at the
   top of `styles.css`).
 
@@ -159,9 +162,11 @@ inputs: **auto-tag identification** (paste a free AcoustID key in ⚙, then righ
 track → Identify) and **online cover-art fetch** (play a track with no embedded art but
 clean album/artist tags — watch the art panel fill in).
 
-Next up when Stan gives the go: **Phase 4 (stretch)** — auto-playlists by genre/vibe; the
-chat-assistant panel is still on the table but I lean against it. And the **final-polish**
-color-scheme pass (CSS variables at the top of `styles.css`).
+Open items raised after Phase 3 (awaiting Stan's go on order): **playback modes**
+(shuffle / repeat-all / repeat-one — small core feature, not yet built); **Phase 4
+(stretch)** auto-playlists by genre/vibe (chat-assistant panel dropped); and the
+**final-polish** pass — color scheme (CSS vars top of `styles.css`), spacing the top-right
+controls away from the Windows caption buttons, and possibly resizable spectrum/VU meters.
 
 New Phase-3 source files: `src/renderer/src/columns.tsx` (column registry + cell
 rendering), `src/renderer/src/components/IdentifyDialog.tsx`,
