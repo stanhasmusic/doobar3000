@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ColumnKey, Track } from '../../../shared/types'
 import { levelingDbMap, useStore, type SortKey } from '../store'
 import { ALL_COLUMNS, cellValue, COLUMN_DEFS } from '../columns'
@@ -69,7 +69,7 @@ export function TrackList() {
   const [menu, setMenu] = useState<MenuState | null>(null)
   const [colMenu, setColMenu] = useState<{ x: number; y: number } | null>(null)
   const [identifyFor, setIdentifyFor] = useState<Track | null>(null)
-  const containerRef = useRef<HTMLDivElement>(null)
+  const roRef = useRef<ResizeObserver | null>(null)
   const [drag, setDrag] = useState<{
     key: ColumnKey
     x: number
@@ -96,12 +96,18 @@ export function TrackList() {
     [columns]
   )
 
-  useEffect(() => {
-    const el = containerRef.current
-    if (!el) return
-    const ro = new ResizeObserver(() => setViewportH(el.clientHeight))
-    ro.observe(el)
-    return () => ro.disconnect()
+  // Callback ref: the scroll element only mounts once the library is non-empty
+  // (before that we render the empty state), so a plain mount effect would miss it.
+  // Attaching the observer when the node actually appears keeps viewportH correct.
+  const setBodyRef = useCallback((el: HTMLDivElement | null) => {
+    roRef.current?.disconnect()
+    roRef.current = null
+    if (el) {
+      setViewportH(el.clientHeight)
+      const ro = new ResizeObserver(() => setViewportH(el.clientHeight))
+      ro.observe(el)
+      roRef.current = ro
+    }
   }, [])
 
   useEffect(() => {
@@ -229,7 +235,7 @@ export function TrackList() {
 
       <div
         className="list-body"
-        ref={containerRef}
+        ref={setBodyRef}
         onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}
       >
         <div style={{ height: rows.length * ROW_HEIGHT, position: 'relative' }}>
