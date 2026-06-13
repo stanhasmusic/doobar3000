@@ -3,7 +3,27 @@
 A native Windows music player: **iTunes-simple to use, foobar2000-powerful under the hood.**
 Fixed, polished layout out of the box — no user-assembled panels.
 
-## What it does today (end of Phase 2)
+## What it does today (end of Phase 3)
+
+- **Customizable columns**: right-click the track-list header for a column picker
+  (add/remove #, Title, Artist, Album Artist, Album, Genre, Year, Time, Bitrate,
+  Sample Rate, Codec, Type, Level). Drag a column header onto another to reorder. The
+  chosen set and order persist in settings. Level shows the auto-leveler's gain per track
+  (`—` when leveling is off).
+- **Auto-tagging (AcoustID + MusicBrainz)**: right-click a track → *Identify (auto-tag)*.
+  Fingerprints the file with `fpcalc`, looks it up on AcoustID, and offers ranked tag
+  candidates; *Apply* rewrites the file's tags (ffmpeg remux, audio untouched) and rescans
+  it. Needs a free AcoustID application key (paste it in ⚙) and the one-click fingerprinter
+  download (~1.5 MB, in ⚙).
+- **Automatic cover art**: when a track has no embedded art, the art panel fetches it from
+  the Cover Art Archive (via a MusicBrainz release-group match) and caches it on disk.
+- **Duplicate detection**: the "Duplicates" sidebar entry groups tracks with the same
+  title+artist and near-identical length, showing each copy's path / format / bitrate with
+  per-row Play and Remove.
+- **Context menu**: Play · Identify · Add to Playlist · Search on Spotify · Search on
+  Apple Music · Remove from Playlist (in playlists) · Remove from library.
+
+## What it did as of Phase 2
 
 - **Real-time visualizers** in the top bar: log-frequency spectrum analyzer and stereo
   VU meter with peak hold, fed by `AnalyserNode` taps on the playback graph.
@@ -54,8 +74,10 @@ Dev-harness env vars (used for automated testing, safe to ignore):
 `SCAN_DIR=<folder>` merge-scans a folder on launch · `DEV_AUTOPLAY=1` plays the first
 track · `DEV_SEEK=<sec>` seeks shortly after autoplay · `SCREENSHOT_PATH=<file.png>`
 captures the window and exits (`SCREENSHOT_DELAY=<ms>`, default 5000) ·
-`DEV_FFMPEG_DOWNLOAD=1` exercises the decoder-pack download · `DEBUG_LOG=1` prints
-media-protocol requests and renderer console to the terminal.
+`DEV_EVAL=<js>` runs renderer JS before the screenshot (e.g. open a dialog; `useStore`
+is exposed on `window` in dev) · `DEV_FFMPEG_DOWNLOAD=1` exercises the decoder-pack
+download · `DEV_FPCALC_DOWNLOAD=1` exercises the fingerprinter download · `DEBUG_LOG=1`
+prints media-protocol requests and renderer console to the terminal.
 
 ## Tech stack
 
@@ -66,8 +88,15 @@ media-protocol requests and renderer console to the terminal.
 - **music-metadata** for tag reading (bundled into the main process — it's ESM-only, see
   `electron.vite.config.ts`).
 - **Persistence**: plain JSON in the user-data dir (`%APPDATA%\doobar3000`): `library.json`,
-  `playlists.json`, `settings.json`, and `peaks/<sha1-of-path>.json` waveform caches.
+  `playlists.json`, `settings.json`, `peaks/<sha1-of-path>.json` waveform caches,
+  `transcode/<sha1>.flac` decode-fallback cache, `art/<sha1>.img` fetched cover art, and
+  `bin/` for the downloaded `ffmpeg.exe` / `fpcalc.exe`.
   (Chose JSON over SQLite to avoid native-module rebuild pain on Windows; fine for 10k+ tracks.)
+- **Auto-tagging** (`src/main/acoustid.ts`): `fpcalc -json` fingerprint → AcoustID lookup →
+  ranked candidates; *Apply* writes tags via ffmpeg `-c copy` remux (keeps a `.bak` until the
+  swap succeeds). **Cover art** (`src/main/art.ts`): MusicBrainz release-group search →
+  Cover Art Archive, throttled to 1 req/s, disk-cached. External links (`shell.openExternal`)
+  are allow-listed to Spotify/Apple Music/AcoustID HTTPS hosts.
 
 ## Architecture notes / gotchas
 
@@ -94,6 +123,15 @@ media-protocol requests and renderer console to the terminal.
 - The window uses `titleBarStyle: 'hidden'` + `titleBarOverlay`; the top bar is the drag
   region and has 150px right padding to clear the Windows caption buttons.
 - `userData` path is pinned explicitly so dev and packaged builds share one data folder.
+- **AcoustID needs `fpcalc`, not ffmpeg**: the gyan.dev "essentials" ffmpeg build is not
+  compiled with the chromaprint muxer, so fingerprinting uses the separate `fpcalc.exe`
+  (chromaprint releases, ~1.5 MB), installed alongside ffmpeg in `bin/`.
+- **MusicBrainz etiquette**: hard 1 req/sec limit and a descriptive `User-Agent` are
+  required or it returns 503; Cover Art Archive 404s (no art for that release) are normal
+  and negative-cached for the session.
+- **Track-list grid is inline**: column widths come from `src/renderer/src/columns.tsx`
+  and are written as an inline `grid-template-columns` on the header and every row, since
+  the visible column set is user-configurable.
 
 ## Roadmap
 
@@ -102,17 +140,29 @@ media-protocol requests and renderer console to the terminal.
   the dev harness: ALAC transcode playback, LUFS values sane (−9 to −13 LUFS on real
   masters), visualizers live, download flow exercised end-to-end. Post-test additions
   per user feedback: Level column + album-art lightbox.
-- **Phase 3 — Library UX + smart library**: re-arrangeable and add/remove track-list
-  columns (bitrate, file type, year, …); AcoustID/MusicBrainz auto-tagging (needs free
-  API key); auto-fetch missing album art (Cover Art Archive, via the same MusicBrainz IDs);
-  duplicate detection; Spotify/Apple Music search links in the context menu.
+- **Phase 3 — Library UX + smart library: DONE.** Self-verified via the dev harness:
+  data-driven columns render + the column picker / drag-reorder work; the Duplicates view
+  found 18 groups in the real library; the Identify dialog mounts and shows the no-key
+  prompt; the AcoustID/fpcalc settings render and the fpcalc download installed
+  end-to-end. **Awaiting user testing** — needs a real AcoustID key to exercise actual
+  tag identification, and a track lacking embedded art to exercise online art fetch.
 - **Phase 4 — Stretch**: auto-playlists by genre/vibe; possibly a chat assistant panel.
 - **Final polish**: revisit color scheme/theming (palette lives in CSS variables at the
   top of `styles.css`).
 
 ## Where we left off
 
-Phase 2 user-tested and approved; two follow-up requests (album-art lightbox, Level
-column) implemented. Next: Phase 3 (column customization, AcoustID/MusicBrainz
-auto-tagging + cover-art fetch, duplicate detection, Spotify/Apple Music links) —
-awaiting go-ahead.
+Phase 3 complete and self-verified via the dev harness (column picker, drag-reorder,
+Duplicates view, Identify dialog, AcoustID/fpcalc settings, fpcalc download). Awaiting
+user testing. Two paths still need a real-world try because the harness can't supply the
+inputs: **auto-tag identification** (paste a free AcoustID key in ⚙, then right-click a
+track → Identify) and **online cover-art fetch** (play a track with no embedded art but
+clean album/artist tags — watch the art panel fill in).
+
+Next up when Stan gives the go: **Phase 4 (stretch)** — auto-playlists by genre/vibe; the
+chat-assistant panel is still on the table but I lean against it. And the **final-polish**
+color-scheme pass (CSS variables at the top of `styles.css`).
+
+New Phase-3 source files: `src/renderer/src/columns.tsx` (column registry + cell
+rendering), `src/renderer/src/components/IdentifyDialog.tsx`,
+`src/renderer/src/components/DuplicatesView.tsx`, `src/main/acoustid.ts`, `src/main/art.ts`.

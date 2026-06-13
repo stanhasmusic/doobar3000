@@ -33,6 +33,12 @@ export function Sidebar() {
       >
         <span className="side-icon">♫</span> All Music
       </div>
+      <div
+        className={`side-item ${view.type === 'duplicates' ? 'active' : ''}`}
+        onClick={() => setView({ type: 'duplicates' })}
+      >
+        <span className="side-icon">⧉</span> Duplicates
+      </div>
 
       <div className="side-section">
         PLAYLISTS

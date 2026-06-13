@@ -22,9 +22,15 @@ export function ArtPanel() {
       return
     }
     let cancelled = false
-    void window.api.getArt(track.path).then((url) => {
-      cache.set(albumKey, url)
-      if (!cancelled) setArt(url)
+    setArt(null)
+    // embedded art (or the fetch cache) first; if nothing, try fetching online
+    void window.api.getArt(track.path, albumKey).then(async (url) => {
+      let result = url
+      if (!result && track.albumArtist && track.album) {
+        result = await window.api.fetchArt(track.albumArtist, track.album)
+      }
+      cache.set(albumKey, result)
+      if (!cancelled) setArt(result)
     })
     return () => {
       cancelled = true

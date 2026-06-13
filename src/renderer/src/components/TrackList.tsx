@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { Track } from '../../../shared/types'
-import { formatDb, formatTime, levelingDbMap, useStore, type SortKey } from '../store'
+import type { ColumnKey, Track } from '../../../shared/types'
+import { levelingDbMap, useStore, type SortKey } from '../store'
+import { ALL_COLUMNS, cellValue, COLUMN_DEFS } from '../columns'
 import { droppedPaths } from './Sidebar'
+import { IdentifyDialog } from './IdentifyDialog'
 
 const ROW_HEIGHT = 34
 const OVERSCAN = 10
@@ -13,28 +15,22 @@ interface MenuState {
   rowIndex: number
 }
 
-const COLUMNS: { key: SortKey; label: string; className: string }[] = [
-  { key: 'trackNo', label: '#', className: 'col-no' },
-  { key: 'title', label: 'Title', className: 'col-title' },
-  { key: 'artist', label: 'Artist', className: 'col-artist' },
-  { key: 'album', label: 'Album', className: 'col-album' },
-  { key: 'genre', label: 'Genre', className: 'col-genre' },
-  { key: 'duration', label: 'Time', className: 'col-time' }
-]
+const NUMERIC_KEYS = new Set<SortKey>(['trackNo', 'duration', 'year', 'bitrate', 'sampleRate'])
 
 function compareTracks(a: Track, b: Track, key: SortKey, dir: 1 | -1): number {
   const tier = (x: Track, y: Track, k: SortKey): number => {
-    if (k === 'duration') return x.duration - y.duration
-    if (k === 'trackNo') return (x.trackNo ?? 0) - (y.trackNo ?? 0)
-    return String(x[k]).localeCompare(String(y[k]), undefined, { sensitivity: 'base' })
+    if (NUMERIC_KEYS.has(k)) return Number(x[k] ?? 0) - Number(y[k] ?? 0)
+    return String(x[k] ?? '').localeCompare(String(y[k] ?? ''), undefined, { sensitivity: 'base' })
   }
-  // artist/album sorts cascade like iTunes: artist → album → track number
+  // artist/album-ish sorts cascade like iTunes: → album → track number
   const tiers: SortKey[] =
     key === 'artist'
       ? ['artist', 'album', 'trackNo']
-      : key === 'album'
-        ? ['album', 'trackNo']
-        : [key]
+      : key === 'albumArtist'
+        ? ['albumArtist', 'album', 'trackNo']
+        : key === 'album'
+          ? ['album', 'trackNo']
+          : [key]
   for (const k of tiers) {
     const c = tier(a, b, k)
     if (c !== 0) return c * dir
@@ -47,6 +43,14 @@ function Notice() {
   return notice ? <span className="notice">{notice}&ensp;·&ensp;</span> : null
 }
 
+const searchUrls = (t: Track): { spotify: string; apple: string } => {
+  const q = encodeURIComponent(`${t.artist} ${t.title}`.trim())
+  return {
+    spotify: `https://open.spotify.com/search/${q}`,
+    apple: `https://music.apple.com/us/search?term=${q}`
+  }
+}
+
 export function TrackList() {
   const library = useStore((s) => s.library)
   const playlists = useStore((s) => s.playlists)
@@ -56,13 +60,17 @@ export function TrackList() {
   const currentPath = useStore((s) => s.currentPath)
   const selectedPath = useStore((s) => s.selectedPath)
   const levelMode = useStore((s) => s.levelMode)
-  const { playQueue, setSort, setSelected, addToPlaylist, removeFromPlaylist } =
+  const columns = useStore((s) => s.columns)
+  const { playQueue, setSort, setSelected, setColumns, addToPlaylist, removeFromPlaylist } =
     useStore.getState()
 
   const [scrollTop, setScrollTop] = useState(0)
   const [viewportH, setViewportH] = useState(600)
   const [menu, setMenu] = useState<MenuState | null>(null)
+  const [colMenu, setColMenu] = useState<{ x: number; y: number } | null>(null)
+  const [identifyFor, setIdentifyFor] = useState<Track | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
+  const dragKey = useRef<ColumnKey | null>(null)
 
   const isPlaylist = view.type === 'playlist'
   const playlist = isPlaylist ? playlists.find((p) => p.id === view.id) : undefined
@@ -77,9 +85,11 @@ export function TrackList() {
     return [...library].sort((a, b) => compareTracks(a, b, sortKey, sortDir))
   }, [library, playlist, isPlaylist, sortKey, sortDir])
 
-  // Level column data: gain the auto-leveler applies per track (shown while leveling is on)
-  const showLevel = levelMode !== 'off'
   const levelDbs = useMemo(() => levelingDbMap(library, levelMode), [library, levelMode])
+  const gridTemplate = useMemo(
+    () => columns.map((k) => COLUMN_DEFS[k].width).join(' '),
+    [columns]
+  )
 
   useEffect(() => {
     const el = containerRef.current
@@ -90,7 +100,10 @@ export function TrackList() {
   }, [])
 
   useEffect(() => {
-    const close = () => setMenu(null)
+    const close = () => {
+      setMenu(null)
+      setColMenu(null)
+    }
     window.addEventListener('click', close)
     return () => window.removeEventListener('click', close)
   }, [])
@@ -106,11 +119,33 @@ export function TrackList() {
 
   // dropping files/folders from Explorer anywhere on the track area imports them
   const dropProps = {
-    onDragOver: (e: React.DragEvent) => e.preventDefault(),
+    onDragOver: (e: React.DragEvent) => {
+      if (e.dataTransfer.types.includes('Files')) e.preventDefault()
+    },
     onDrop: (e: React.DragEvent) => {
-      e.preventDefault()
       const paths = droppedPaths(e)
-      if (paths.length) void useStore.getState().importPaths(paths)
+      if (paths.length) {
+        e.preventDefault()
+        void useStore.getState().importPaths(paths)
+      }
+    }
+  }
+
+  // drag a header onto another to reorder columns
+  const onColDrop = (target: ColumnKey) => {
+    const from = dragKey.current
+    dragKey.current = null
+    if (!from || from === target) return
+    const next = columns.filter((k) => k !== from)
+    next.splice(next.indexOf(target), 0, from)
+    setColumns(next)
+  }
+
+  const toggleColumn = (key: ColumnKey) => {
+    if (columns.includes(key)) {
+      if (columns.length > 1) setColumns(columns.filter((k) => k !== key))
+    } else {
+      setColumns([...columns, key])
     }
   }
 
@@ -127,24 +162,34 @@ export function TrackList() {
 
   return (
     <div className="tracklist" {...dropProps}>
-      <div className={`list-header ${showLevel ? 'with-level' : ''}`}>
-        {COLUMNS.map((c) => (
-          <div
-            key={c.key}
-            className={`${c.className} ${!isPlaylist ? 'sortable' : ''}`}
-            onClick={() => !isPlaylist && setSort(c.key)}
-          >
-            {c.label}
-            {!isPlaylist && sortKey === c.key && (
-              <span className="sort-arrow">{sortDir === 1 ? '▲' : '▼'}</span>
-            )}
-          </div>
-        ))}
-        {showLevel && (
-          <div className="col-level" title="Gain applied by auto-leveling">
-            Level
-          </div>
-        )}
+      <div
+        className="list-header"
+        style={{ gridTemplateColumns: gridTemplate }}
+        onContextMenu={(e) => {
+          e.preventDefault()
+          setColMenu({ x: e.clientX, y: e.clientY })
+        }}
+      >
+        {columns.map((key) => {
+          const def = COLUMN_DEFS[key]
+          const canSort = !isPlaylist && def.sortable
+          return (
+            <div
+              key={key}
+              className={`${def.className} ${canSort ? 'sortable' : ''}`}
+              draggable
+              onDragStart={() => (dragKey.current = key)}
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={() => onColDrop(key)}
+              onClick={() => canSort && setSort(key as SortKey)}
+            >
+              {def.label}
+              {canSort && sortKey === key && (
+                <span className="sort-arrow">{sortDir === 1 ? '▲' : '▼'}</span>
+              )}
+            </div>
+          )
+        })}
       </div>
 
       <div
@@ -161,8 +206,8 @@ export function TrackList() {
                 key={`${t.path}-${index}`}
                 className={`row ${isCurrent ? 'current' : ''} ${
                   t.path === selectedPath ? 'selected' : ''
-                } ${index % 2 ? 'odd' : ''} ${showLevel ? 'with-level' : ''}`}
-                style={{ top: index * ROW_HEIGHT }}
+                } ${index % 2 ? 'odd' : ''}`}
+                style={{ top: index * ROW_HEIGHT, gridTemplateColumns: gridTemplate }}
                 onClick={() => setSelected(t.path)}
                 onDoubleClick={() => playRow(index)}
                 onContextMenu={(e) => {
@@ -171,17 +216,11 @@ export function TrackList() {
                   setMenu({ x: e.clientX, y: e.clientY, track: t, rowIndex: index })
                 }}
               >
-                <div className="col-no">{isCurrent ? '♪' : (t.trackNo ?? '')}</div>
-                <div className="col-title">{t.title}</div>
-                <div className="col-artist">{t.artist}</div>
-                <div className="col-album">{t.album}</div>
-                <div className="col-genre">{t.genre}</div>
-                <div className="col-time">{formatTime(t.duration)}</div>
-                {showLevel && (
-                  <div className="col-level">
-                    {levelDbs.has(t.path) ? formatDb(levelDbs.get(t.path)!) : '…'}
+                {columns.map((key) => (
+                  <div key={key} className={COLUMN_DEFS[key].className}>
+                    {cellValue(key, t, isCurrent, levelMode, levelDbs.get(t.path))}
                   </div>
-                )}
+                ))}
               </div>
             )
           })}
@@ -198,6 +237,9 @@ export function TrackList() {
         <div className="context-menu" style={{ left: menu.x, top: menu.y }}>
           <div className="menu-item" onClick={() => playRow(menu.rowIndex)}>
             Play
+          </div>
+          <div className="menu-item" onClick={() => setIdentifyFor(menu.track)}>
+            Identify (auto-tag)…
           </div>
           <div className="menu-item submenu-parent">
             Add to Playlist ▸
@@ -217,6 +259,19 @@ export function TrackList() {
               )}
             </div>
           </div>
+          <div
+            className="menu-item"
+            onClick={() => void window.api.openExternal(searchUrls(menu.track).spotify)}
+          >
+            Search on Spotify
+          </div>
+          <div
+            className="menu-item"
+            onClick={() => void window.api.openExternal(searchUrls(menu.track).apple)}
+          >
+            Search on Apple Music
+          </div>
+          <div className="menu-sep" />
           {playlist && (
             <div
               className="menu-item"
@@ -225,7 +280,29 @@ export function TrackList() {
               Remove from Playlist
             </div>
           )}
+          <div
+            className="menu-item danger"
+            onClick={() => void useStore.getState().removeFromLibrary([menu.track.path])}
+          >
+            Remove from library
+          </div>
         </div>
+      )}
+
+      {colMenu && (
+        <div className="context-menu" style={{ left: colMenu.x, top: colMenu.y }}>
+          <div className="menu-head">Columns</div>
+          {ALL_COLUMNS.map((key) => (
+            <div key={key} className="menu-item check" onClick={() => toggleColumn(key)}>
+              <span className="check-box">{columns.includes(key) ? '✓' : ''}</span>
+              {COLUMN_DEFS[key].label}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {identifyFor && (
+        <IdentifyDialog track={identifyFor} onClose={() => setIdentifyFor(null)} />
       )}
     </div>
   )

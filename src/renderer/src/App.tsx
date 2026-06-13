@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { DuplicatesView } from './components/DuplicatesView'
 import { Sidebar } from './components/Sidebar'
 import { TopBar } from './components/TopBar'
 import { TrackList } from './components/TrackList'
@@ -7,6 +8,11 @@ import { useStore } from './store'
 
 // React StrictMode double-mounts in dev; init must run exactly once
 let initRan = false
+
+function Content() {
+  const view = useStore((s) => s.view)
+  return view.type === 'duplicates' ? <DuplicatesView /> : <TrackList />
+}
 
 export function App() {
   useEffect(() => {
@@ -59,7 +65,7 @@ export function App() {
       <TopBar />
       <div className="middle">
         <Sidebar />
-        <TrackList />
+        <Content />
       </div>
       <WaveformBar />
     </div>

@@ -1,5 +1,13 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
-import type { FfmpegStatus, Playlist, ScanProgress, Settings, Track } from '../shared/types'
+import type {
+  FfmpegStatus,
+  IdentifyResult,
+  Playlist,
+  ScanProgress,
+  Settings,
+  TagCandidate,
+  Track
+} from '../shared/types'
 
 const api = {
   selectFolder: (): Promise<string | null> => ipcRenderer.invoke('select-folder'),
@@ -27,7 +35,18 @@ const api = {
   },
   transcode: (trackPath: string): Promise<string | null> =>
     ipcRenderer.invoke('transcode', trackPath),
-  getArt: (trackPath: string): Promise<string | null> => ipcRenderer.invoke('get-art', trackPath),
+  getArt: (trackPath: string, albumKey: string): Promise<string | null> =>
+    ipcRenderer.invoke('get-art', trackPath, albumKey),
+  fetchArt: (albumArtist: string, album: string): Promise<string | null> =>
+    ipcRenderer.invoke('fetch-art', albumArtist, album),
+  fpcalcStatus: (): Promise<boolean> => ipcRenderer.invoke('fpcalc-status'),
+  fpcalcDownload: (): Promise<boolean> => ipcRenderer.invoke('fpcalc-download'),
+  identifyTrack: (trackPath: string, apiKey: string): Promise<IdentifyResult> =>
+    ipcRenderer.invoke('identify-track', trackPath, apiKey),
+  applyTags: (trackPath: string, tags: TagCandidate): Promise<Track[] | null> =>
+    ipcRenderer.invoke('apply-tags', trackPath, tags),
+  removeTracks: (paths: string[]): Promise<Track[]> => ipcRenderer.invoke('remove-tracks', paths),
+  openExternal: (url: string): Promise<void> => ipcRenderer.invoke('open-external', url),
   analyzeLoudness: (): Promise<void> => ipcRenderer.invoke('analyze-loudness'),
   onLufsUpdate: (cb: (u: { path: string; lufs: number; peakDb: number }) => void): void => {
     ipcRenderer.on('lufs-update', (_e, u) => cb(u))

@@ -1,5 +1,12 @@
 import { create } from 'zustand'
-import type { FfmpegStatus, LevelMode, Playlist, ScanProgress, Track } from '../../shared/types'
+import type {
+  ColumnKey,
+  FfmpegStatus,
+  LevelMode,
+  Playlist,
+  ScanProgress,
+  Track
+} from '../../shared/types'
 import { audio } from './audio'
 
 const LUFS_TARGET = -18 // ReplayGain 2.0 reference loudness
@@ -45,8 +52,45 @@ function levelingDb(track: Track | undefined, mode: LevelMode, library: Track[])
   return levelingDbMap(library, mode).get(track.path) ?? 0
 }
 
-export type View = { type: 'library' } | { type: 'playlist'; id: string }
-export type SortKey = 'title' | 'artist' | 'album' | 'genre' | 'duration' | 'trackNo'
+export type View = { type: 'library' } | { type: 'playlist'; id: string } | { type: 'duplicates' }
+// every column except Level (whose value depends on the leveling mode) is sortable
+export type SortKey = Exclude<ColumnKey, 'level'>
+
+export const DEFAULT_COLUMNS: ColumnKey[] = [
+  'trackNo',
+  'title',
+  'artist',
+  'album',
+  'genre',
+  'duration',
+  'level'
+]
+
+// Likely duplicates: same normalized title + artist, durations within 2 s.
+// Returns groups of 2+ tracks (fingerprint-accurate matching can layer on later).
+const norm = (s: string): string => s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim()
+export function duplicateGroups(library: Track[]): Track[][] {
+  const byKey = new Map<string, Track[]>()
+  for (const t of library) {
+    const key = `${norm(t.title)}|${norm(t.artist)}`
+    byKey.get(key)?.push(t) ?? byKey.set(key, [t])
+  }
+  const groups: Track[][] = []
+  for (const tracks of byKey.values()) {
+    if (tracks.length < 2) continue
+    tracks.sort((a, b) => a.duration - b.duration)
+    let cluster: Track[] = [tracks[0]]
+    for (let i = 1; i <= tracks.length; i++) {
+      if (i < tracks.length && tracks[i].duration - cluster[cluster.length - 1].duration <= 2) {
+        cluster.push(tracks[i])
+      } else {
+        if (cluster.length >= 2) groups.push(cluster)
+        cluster = i < tracks.length ? [tracks[i]] : []
+      }
+    }
+  }
+  return groups
+}
 
 interface State {
   library: Track[]
@@ -64,9 +108,13 @@ interface State {
   selectedPath: string | null
   notice: string | null
   levelMode: LevelMode
+  columns: ColumnKey[]
+  acoustidKey: string
   ffmpeg: FfmpegStatus | null
   ffmpegProgress: number | null
   lufsProgress: ScanProgress | null
+  fpcalcFound: boolean
+  fpcalcInstalling: boolean
   /** actual file being played (a transcode-cache path when the original can't decode) */
   playbackPath: string | null
 
@@ -75,7 +123,11 @@ interface State {
   importPaths: (paths: string[]) => Promise<string[]>
   dropOnPlaylist: (id: string, paths: string[]) => Promise<void>
   setLevelMode: (m: LevelMode) => void
+  setColumns: (c: ColumnKey[]) => void
+  setAcoustidKey: (k: string) => void
+  removeFromLibrary: (paths: string[]) => Promise<void>
   downloadFfmpeg: () => Promise<void>
+  downloadFpcalc: () => Promise<void>
   showNotice: (msg: string) => void
   setView: (v: View) => void
   setSort: (k: SortKey) => void
@@ -97,6 +149,16 @@ interface State {
 
 let saveSettingsTimer: ReturnType<typeof setTimeout> | undefined
 
+function persistSettings(): void {
+  const s = useStore.getState()
+  void window.api.saveSettings({
+    volume: s.volume,
+    levelMode: s.levelMode,
+    columns: s.columns,
+    acoustidKey: s.acoustidKey
+  })
+}
+
 export const useStore = create<State>((set, get) => ({
   library: [],
   playlists: [],
@@ -113,20 +175,34 @@ export const useStore = create<State>((set, get) => ({
   selectedPath: null,
   notice: null,
   levelMode: 'off',
+  columns: DEFAULT_COLUMNS,
+  acoustidKey: '',
   ffmpeg: null,
   ffmpegProgress: null,
   lufsProgress: null,
+  fpcalcFound: false,
+  fpcalcInstalling: false,
   playbackPath: null,
 
   init: async () => {
-    const [library, playlists, settings, ffmpeg] = await Promise.all([
+    const [library, playlists, settings, ffmpeg, fpcalcFound] = await Promise.all([
       window.api.getLibrary(),
       window.api.getPlaylists(),
       window.api.getSettings(),
-      window.api.ffmpegStatus()
+      window.api.ffmpegStatus(),
+      window.api.fpcalcStatus()
     ])
     audio.setVolume(settings.volume)
-    set({ library, playlists, volume: settings.volume, levelMode: settings.levelMode, ffmpeg })
+    set({
+      library,
+      playlists,
+      volume: settings.volume,
+      levelMode: settings.levelMode,
+      columns: settings.columns?.length ? settings.columns : DEFAULT_COLUMNS,
+      acoustidKey: settings.acoustidKey ?? '',
+      ffmpeg,
+      fpcalcFound
+    })
     window.api.onScanProgress((p) => {
       set({ scanning: p.done >= p.total ? null : p })
     })
@@ -170,8 +246,35 @@ export const useStore = create<State>((set, get) => ({
 
   setLevelMode: (levelMode) => {
     set({ levelMode })
-    void window.api.saveSettings({ volume: get().volume, levelMode })
+    persistSettings()
     applyLeveling()
+  },
+
+  setColumns: (columns) => {
+    set({ columns })
+    persistSettings()
+  },
+
+  setAcoustidKey: (acoustidKey) => {
+    set({ acoustidKey })
+    persistSettings()
+  },
+
+  removeFromLibrary: async (paths) => {
+    const gone = new Set(paths)
+    // pull them from any playlists too, then update the library from disk
+    const playlists = get().playlists.map((p) => ({
+      ...p,
+      trackPaths: p.trackPaths.filter((tp) => !gone.has(tp))
+    }))
+    if (playlists.some((p, i) => p.trackPaths.length !== get().playlists[i].trackPaths.length)) {
+      set({ playlists })
+      void window.api.savePlaylists(playlists)
+    }
+    const library = await window.api.removeTracks(paths)
+    const cleared = get().currentPath && gone.has(get().currentPath!)
+    set({ library, ...(cleared ? { selectedPath: null } : {}) })
+    get().showNotice(`Removed ${paths.length} track${paths.length === 1 ? '' : 's'} from library`)
   },
 
   downloadFfmpeg: async () => {
@@ -181,6 +284,13 @@ export const useStore = create<State>((set, get) => ({
     set({ ffmpeg, ffmpegProgress: null })
     get().showNotice(ok ? 'Decoder pack installed.' : 'Decoder pack download failed.')
     if (ok && get().library.some((t) => t.lufs === null)) void window.api.analyzeLoudness()
+  },
+
+  downloadFpcalc: async () => {
+    set({ fpcalcInstalling: true })
+    const ok = await window.api.fpcalcDownload()
+    set({ fpcalcInstalling: false, fpcalcFound: ok || get().fpcalcFound })
+    get().showNotice(ok ? 'Fingerprinter installed.' : 'Fingerprinter download failed.')
   },
 
   showNotice: (msg) => {
@@ -249,10 +359,7 @@ export const useStore = create<State>((set, get) => ({
     audio.setVolume(volume)
     set({ volume })
     clearTimeout(saveSettingsTimer)
-    saveSettingsTimer = setTimeout(
-      () => void window.api.saveSettings({ volume, levelMode: get().levelMode }),
-      400
-    )
+    saveSettingsTimer = setTimeout(persistSettings, 400)
   },
 
   createPlaylist: (name) => {
@@ -294,6 +401,9 @@ export const useStore = create<State>((set, get) => ({
 }))
 
 audio.onEnded = () => useStore.getState().next()
+
+// dev-only: lets the screenshot harness (DEV_EVAL) drive the store
+if (import.meta.env.DEV) (window as unknown as { useStore: typeof useStore }).useStore = useStore
 
 let noticeTimer: ReturnType<typeof setTimeout> | undefined
 

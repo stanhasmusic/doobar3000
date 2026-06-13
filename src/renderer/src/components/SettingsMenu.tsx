@@ -16,7 +16,10 @@ export function SettingsMenu() {
   const ffmpegProgress = useStore((s) => s.ffmpegProgress)
   const library = useStore((s) => s.library)
   const lufsProgress = useStore((s) => s.lufsProgress)
-  const { setLevelMode, downloadFfmpeg } = useStore.getState()
+  const acoustidKey = useStore((s) => s.acoustidKey)
+  const fpcalcFound = useStore((s) => s.fpcalcFound)
+  const fpcalcInstalling = useStore((s) => s.fpcalcInstalling)
+  const { setLevelMode, downloadFfmpeg, setAcoustidKey, downloadFpcalc } = useStore.getState()
 
   useEffect(() => {
     if (!open) return
@@ -77,6 +80,43 @@ export function SettingsMenu() {
               onClick={() => void downloadFfmpeg()}
             >
               {downloading ? `Downloading… ${ffmpegProgress}%` : 'Download decoder pack'}
+            </button>
+          )}
+
+          <div className="set-title">Auto-tagging (AcoustID)</div>
+          <div className="set-hint">
+            Identifies tracks by audio fingerprint and fills in tags from MusicBrainz.
+            Paste a free application key from{' '}
+            <a
+              href="#"
+              onClick={(e) => {
+                e.preventDefault()
+                void window.api.openExternal('https://acoustid.org/new-application')
+              }}
+            >
+              acoustid.org
+            </a>
+            .
+          </div>
+          <input
+            className="set-input"
+            type="text"
+            placeholder="AcoustID application key"
+            value={acoustidKey}
+            spellCheck={false}
+            onChange={(e) => setAcoustidKey(e.target.value.trim())}
+          />
+          <div className="set-hint">
+            Fingerprinter (fpcalc):{' '}
+            {fpcalcFound ? 'installed.' : 'not installed — required to identify tracks.'}
+          </div>
+          {!fpcalcFound && (
+            <button
+              className="btn-download"
+              disabled={fpcalcInstalling}
+              onClick={() => void downloadFpcalc()}
+            >
+              {fpcalcInstalling ? 'Installing…' : 'Install fingerprinter (~1.5 MB)'}
             </button>
           )}
         </div>

@@ -1,13 +1,15 @@
-import { app, BrowserWindow, dialog, ipcMain, protocol } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, protocol, shell } from 'electron'
 import { parseFile } from 'music-metadata'
 import { createReadStream } from 'node:fs'
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
 import { Readable } from 'node:stream'
+import { applyTags, downloadFpcalc, findFpcalc, identify } from './acoustid'
+import { fetchArt, getCachedArt } from './art'
 import { downloadFfmpeg, findFfmpeg, measureLoudness, transcode } from './ffmpeg'
 import { scanFolder, scanPaths } from './scanner'
 import * as store from './store'
-import type { Playlist, Settings, Track } from '../shared/types'
+import type { Playlist, Settings, TagCandidate, Track } from '../shared/types'
 
 // 'media' serves local audio files to the renderer with Range support (needed for seeking)
 protocol.registerSchemesAsPrivileged([
@@ -51,6 +53,15 @@ function createWindow(): void {
   if (process.env.SCREENSHOT_PATH) {
     win.webContents.on('did-finish-load', () => {
       setTimeout(async () => {
+        // DEV_EVAL runs arbitrary renderer JS before capture (e.g. open a dialog)
+        if (process.env.DEV_EVAL) {
+          try {
+            await win!.webContents.executeJavaScript(process.env.DEV_EVAL)
+            await new Promise((r) => setTimeout(r, 1200))
+          } catch (err) {
+            console.error('[dev-eval]', err)
+          }
+        }
         const image = await win!.webContents.capturePage()
         await fs.writeFile(process.env.SCREENSHOT_PATH!, image.toPNG())
         app.quit()
@@ -98,14 +109,45 @@ function registerIpc(): void {
   )
   ipcMain.handle('transcode', (_e, trackPath: string) => transcode(trackPath))
 
-  ipcMain.handle('get-art', async (_e, trackPath: string) => {
+  // embedded art first (authoritative), then the on-disk fetch cache
+  ipcMain.handle('get-art', async (_e, trackPath: string, albumKey: string) => {
     try {
       const meta = await parseFile(trackPath, { skipPostHeaders: true })
       const pic = meta.common.picture?.[0]
-      return pic ? `data:${pic.format};base64,${Buffer.from(pic.data).toString('base64')}` : null
+      if (pic) return `data:${pic.format};base64,${Buffer.from(pic.data).toString('base64')}`
     } catch {
-      return null
+      /* fall through to cache */
     }
+    return getCachedArt(albumKey)
+  })
+
+  ipcMain.handle('fetch-art', (_e, albumArtist: string, album: string) =>
+    fetchArt(albumArtist, album)
+  )
+
+  ipcMain.handle('fpcalc-status', async () => (await findFpcalc()) !== null)
+  ipcMain.handle('fpcalc-download', () => downloadFpcalc())
+  ipcMain.handle('identify-track', (_e, trackPath: string, apiKey: string) =>
+    identify(trackPath, apiKey)
+  )
+
+  // write tags to the file, then rescan it so the library reflects reality
+  ipcMain.handle('apply-tags', async (_e, trackPath: string, tags: TagCandidate) => {
+    if (!(await applyTags(trackPath, tags))) return null
+    const found = await scanPaths([trackPath], () => {})
+    return found.length ? (await mergeIntoLibrary(found)).library : null
+  })
+
+  ipcMain.handle('remove-tracks', async (_e, paths: string[]) => {
+    const gone = new Set(paths)
+    const library = (await store.getLibrary()).filter((t) => !gone.has(t.path))
+    await store.saveLibrary(library)
+    return library
+  })
+
+  const LINK_ALLOWED = /^https:\/\/(open\.spotify\.com|music\.apple\.com|acoustid\.org)\//
+  ipcMain.handle('open-external', (_e, url: string) => {
+    if (LINK_ALLOWED.test(url)) void shell.openExternal(url)
   })
 
   // Background loudness analysis: walks every track missing LUFS, two at a time,
@@ -208,6 +250,12 @@ app.whenReady().then(async () => {
       }
     })
     console.log('[ffmpeg-download] result:', ok)
+  }
+
+  // Dev harness: exercises the fingerprinter (fpcalc) download
+  if (process.env.DEV_FPCALC_DOWNLOAD) {
+    console.log('[fpcalc-download] result:', await downloadFpcalc())
+    console.log('[fpcalc-status]', await findFpcalc())
   }
 
   // Dev harness: SCAN_DIR seeds the library on launch so automated runs have

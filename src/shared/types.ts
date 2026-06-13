@@ -27,10 +27,45 @@ export interface Playlist {
   trackPaths: string[]
 }
 
+export type ColumnKey =
+  | 'trackNo'
+  | 'title'
+  | 'artist'
+  | 'album'
+  | 'albumArtist'
+  | 'genre'
+  | 'year'
+  | 'duration'
+  | 'bitrate'
+  | 'sampleRate'
+  | 'codec'
+  | 'fileType'
+  | 'level'
+
 export interface Settings {
   volume: number
   levelMode: LevelMode
+  /** visible track-list columns, in display order */
+  columns: ColumnKey[]
+  /** AcoustID application API key (user-provided, for track identification) */
+  acoustidKey: string
 }
+
+/** one tag proposal from an AcoustID/MusicBrainz lookup */
+export interface TagCandidate {
+  score: number
+  title: string
+  artist: string
+  albumArtist: string
+  album: string
+  year: number | null
+  trackNo: number | null
+  releaseGroupType: string
+}
+
+export type IdentifyResult =
+  | { ok: true; candidates: TagCandidate[] }
+  | { ok: false; error: string }
 
 export interface FfmpegStatus {
   found: boolean

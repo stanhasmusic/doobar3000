@@ -27,7 +27,12 @@ export const saveLibrary = (tracks: Track[]) => writeJson('library.json', tracks
 export const getPlaylists = () => readJson<Playlist[]>('playlists.json', [])
 export const savePlaylists = (playlists: Playlist[]) => writeJson('playlists.json', playlists)
 
-const DEFAULT_SETTINGS: Settings = { volume: 0.8, levelMode: 'off' }
+const DEFAULT_SETTINGS: Settings = {
+  volume: 0.8,
+  levelMode: 'off',
+  columns: ['trackNo', 'title', 'artist', 'album', 'genre', 'duration', 'level'],
+  acoustidKey: ''
+}
 export const getSettings = async (): Promise<Settings> => ({
   ...DEFAULT_SETTINGS,
   ...(await readJson<Partial<Settings>>('settings.json', {}))
