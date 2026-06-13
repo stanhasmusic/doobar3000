@@ -1,7 +1,44 @@
 # Doobar 3000
 
-A native Windows music player: **iTunes-simple to use, foobar2000-powerful under the hood.**
-Fixed, polished layout out of the box — no user-assembled panels.
+**A native Windows music player — iTunes-simple to use, foobar2000-powerful under the hood.**
+A fixed, polished layout out of the box: no user-assembled panels to wrangle. Built with
+Electron + React + TypeScript.
+
+> **Status:** developed in phases; the core player, audio polish, library UX, smart
+> playlists, and theming are in. See the [roadmap](#roadmap) for what's next.
+
+<!-- TODO: add a screenshot, e.g. ![Doobar 3000](docs/screenshot.png) -->
+
+## Highlights
+
+- 🎵 **Plays everything** — mp3 / flac / m4a / aac / ogg / opus / wav natively; ALAC, APE,
+  WMA and more via an optional one-click ffmpeg decoder pack (transparent transcode + cache).
+- 🔊 **LUFS auto-leveling** (EBU R128 / ReplayGain 2.0) with Track and Album modes.
+- 📊 **Live visualizers** — log-frequency spectrum analyzer + stereo VU meter, theme-aware.
+- 🏷️ **Auto-tagging** via AcoustID fingerprinting + MusicBrainz (bring your own free key).
+- 🖼️ **Automatic cover art** from the Cover Art Archive when none is embedded.
+- 🧠 **Smart playlists** auto-derived from your tags (Recently Added, per-genre, per-decade).
+- 🎨 **Themes** — Dark / Light / Midnight / Sepia presets plus a custom accent color.
+- 🔁 Shuffle + repeat, customizable & reorderable columns, duplicate detection, waveform seek.
+
+## Quick start
+
+```
+npm install
+npm run dev
+```
+
+Requires Node.js on Windows. To enable auto-tagging, paste a free
+[AcoustID application key](https://acoustid.org/new-application) into the ⚙ settings menu
+(it's stored locally and never committed).
+
+## License
+
+[MIT](LICENSE) © Stan M
+
+---
+
+The sections below are detailed build notes — the project is developed in phases.
 
 ## What it does today (Phase 4)
 
@@ -156,8 +193,9 @@ prints media-protocol requests and renderer console to the terminal.
   data-driven columns render + the column picker / drag-reorder work; the Duplicates view
   found 18 groups in the real library; the Identify dialog mounts and shows the no-key
   prompt; the AcoustID/fpcalc settings render and the fpcalc download installed
-  end-to-end. **Awaiting user testing** — needs a real AcoustID key to exercise actual
-  tag identification, and a track lacking embedded art to exercise online art fetch.
+  end-to-end. Auto-tagging is **bring-your-own-key**: paste a free AcoustID application key
+  in ⚙ (it persists in `settings.json`). Still wants a user pass to confirm real-world
+  identification, plus a track lacking embedded art to exercise online art fetch.
 - **Playback modes (shuffle / repeat-all / repeat-one): DONE** 2026-06-13. Queue now
   traverses a `order: number[]` / `orderPos` play-order layer (identity when not shuffled);
   logic verified headless (shuffle keeps current at front, repeat-all wraps, cycle order).
@@ -169,9 +207,18 @@ prints media-protocol requests and renderer console to the terminal.
   per user, 2026-06-13.)
 - **Phase 4.5 — Audio "vibe" playlists**: cluster tracks by analyzed sound
   (energy / tempo / brightness). Not started — needs a per-track DSP analysis pass.
-- **Final polish**: revisit color scheme/theming (palette lives in CSS variables at the
-  top of `styles.css`); space the top-right controls off the Windows caption buttons;
-  possibly resizable spectrum/VU meters.
+- **Final polish**: **color schemes DONE** 2026-06-13 — ⚙ now has a "Color scheme" picker
+  with Dark / Light / Midnight / Sepia presets plus a Custom option (dark base + a
+  user-chosen accent via a native color wheel / hex input). Themes are CSS-variable
+  palettes selected by a `data-theme` attribute on `<html>` (`:root[data-theme='…']` blocks
+  at the top of `styles.css`); the setting persists. The **canvas visualizers follow the
+  theme** too: the spectrum gradient and waveform seek-bar derive from the accent (so a
+  Custom accent flows through), neutrals from the theme vars — snapshotted in `vizColors`
+  (`store.ts`), refreshed by `applyTheme`. The VU meter keeps its green→amber→red *level*
+  coding (only its neutral track/peak recolor). **Column reorder is now a true swap**
+  (was insert/shift): drop one header on another and they trade places; the target darkens
+  and leans the direction it will travel. Remaining: space the top-right controls off the
+  Windows caption buttons; possibly resizable spectrum/VU meters.
 
 ## Where we left off
 
@@ -187,11 +234,30 @@ shipped 2026-06-13 (also fixed a virtualization bug where the track list didn't 
 viewport — the ResizeObserver was attached in a mount effect that ran before the list
 existed; now a callback ref attaches it when the scroll element mounts).
 
+Auto-tag uses a bring-your-own AcoustID key: paste a free application key in ⚙ and it
+persists in `settings.json` (no key is committed to source — public repo). The "no match"
+message in `IdentifyDialog.tsx` was also made more helpful (explains a missing match is
+usually a gap in AcoustID's crowd-sourced DB, not a tag problem).
+
+Color-scheme theming shipped 2026-06-13: ⚙ "Color scheme" picker (Dark / Light / Midnight /
+Sepia + Custom accent). New/changed files: `styles.css` (variable-driven
+`:root[data-theme='…']` palettes + `.theme-grid`/`.theme-swatch` styles), `store.ts`
+(`applyTheme` helper, `theme`/`accentColor` state + setters), `SettingsMenu.tsx` (the
+picker), `types.ts` (`Theme` type + settings fields).
+
+Follow-up the same day (also not yet user-tested in the running app): the canvas
+visualizers now track the theme — `store.ts` exports a `vizColors` snapshot + `refreshVizColors()`
+(called from `applyTheme`); `Visualizers.tsx` and `WaveformBar.tsx` read it instead of
+hardcoded hex (spectrum/waveform derive from the accent, VU keeps its level gradient). And
+column reorder switched from insert/shift to a **true swap** (`swapColumns` in
+`TrackList.tsx`) — chosen per Stan but flagged for a real hands-on test; the swap target
+darkens + leans toward the slot it'll move to (`.col-over` / `col-lean-*` in `styles.css`).
+
 Remaining (awaiting Stan's go on order): **Phase 4.5** audio-"vibe" playlists (cluster by
-analyzed sound — needs a per-track DSP pass, not yet started); and the **final-polish**
-pass — color scheme (CSS vars top of `styles.css`), spacing the top-right controls away
-from the Windows caption buttons, and possibly resizable spectrum/VU meters (recommended a
-splitter handle between the two meters, or S/M/L size presets, over per-meter edge-drag).
+analyzed sound — needs a per-track DSP pass, not yet started); and the rest of the
+**final-polish** pass — spacing the top-right controls away from the Windows caption
+buttons, and possibly resizable spectrum/VU meters (recommended a splitter handle between
+the two meters, or S/M/L size presets, over per-meter edge-drag).
 
 New Phase-3 source files: `src/renderer/src/columns.tsx` (column registry + cell
 rendering), `src/renderer/src/components/IdentifyDialog.tsx`,
