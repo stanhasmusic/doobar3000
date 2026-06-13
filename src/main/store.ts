@@ -31,7 +31,9 @@ const DEFAULT_SETTINGS: Settings = {
   volume: 0.8,
   levelMode: 'off',
   columns: ['trackNo', 'title', 'artist', 'album', 'genre', 'duration', 'level'],
-  acoustidKey: ''
+  acoustidKey: '',
+  shuffle: false,
+  repeat: 'off'
 }
 export const getSettings = async (): Promise<Settings> => ({
   ...DEFAULT_SETTINGS,

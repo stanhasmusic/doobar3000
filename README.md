@@ -22,6 +22,9 @@ Fixed, polished layout out of the box — no user-assembled panels.
   per-row Play and Remove.
 - **Context menu**: Play · Identify · Add to Playlist · Search on Spotify · Search on
   Apple Music · Remove from Playlist (in playlists) · Remove from library.
+- **Playback modes**: shuffle and repeat (off → all → one) toggles in the transport,
+  persisted. Shuffle keeps the current track playing and randomizes the rest; repeat-one
+  replays the current track on end; repeat-all wraps the queue (reshuffling for variety).
 
 ## What it did as of Phase 2
 
@@ -146,8 +149,9 @@ prints media-protocol requests and renderer console to the terminal.
   prompt; the AcoustID/fpcalc settings render and the fpcalc download installed
   end-to-end. **Awaiting user testing** — needs a real AcoustID key to exercise actual
   tag identification, and a track lacking embedded art to exercise online art fetch.
-- **Playback modes (shuffle / repeat-all / repeat-one)** — not yet built and were never
-  actually in a phase; small core addition to slot in around Phase 4. (User flagged this.)
+- **Playback modes (shuffle / repeat-all / repeat-one): DONE** 2026-06-13. Queue now
+  traverses a `order: number[]` / `orderPos` play-order layer (identity when not shuffled);
+  logic verified headless (shuffle keeps current at front, repeat-all wraps, cycle order).
 - **Phase 4 — Stretch**: auto-playlists by genre/vibe. (Chat-assistant panel dropped per
   user, 2026-06-13.)
 - **Final polish**: revisit color scheme/theming (palette lives in CSS variables at the
@@ -162,11 +166,12 @@ inputs: **auto-tag identification** (paste a free AcoustID key in ⚙, then righ
 track → Identify) and **online cover-art fetch** (play a track with no embedded art but
 clean album/artist tags — watch the art panel fill in).
 
-Open items raised after Phase 3 (awaiting Stan's go on order): **playback modes**
-(shuffle / repeat-all / repeat-one — small core feature, not yet built); **Phase 4
-(stretch)** auto-playlists by genre/vibe (chat-assistant panel dropped); and the
-**final-polish** pass — color scheme (CSS vars top of `styles.css`), spacing the top-right
-controls away from the Windows caption buttons, and possibly resizable spectrum/VU meters.
+Playback modes (shuffle/repeat) shipped 2026-06-13. Remaining (awaiting Stan's go on
+order): **Phase 4 (stretch)** auto-playlists by genre/vibe (chat-assistant panel dropped);
+and the **final-polish** pass — color scheme (CSS vars top of `styles.css`), spacing the
+top-right controls away from the Windows caption buttons, and possibly resizable
+spectrum/VU meters (recommended a splitter handle between the two meters, or S/M/L size
+presets, over per-meter edge-drag).
 
 New Phase-3 source files: `src/renderer/src/columns.tsx` (column registry + cell
 rendering), `src/renderer/src/components/IdentifyDialog.tsx`,

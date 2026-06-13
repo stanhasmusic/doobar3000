@@ -4,6 +4,7 @@ import type {
   FfmpegStatus,
   LevelMode,
   Playlist,
+  RepeatMode,
   ScanProgress,
   Track
 } from '../../shared/types'
@@ -99,7 +100,12 @@ interface State {
   sortKey: SortKey
   sortDir: 1 | -1
   queue: string[]
-  queueIndex: number
+  /** traversal order: indices into `queue` (identity when not shuffled) */
+  order: number[]
+  /** position within `order` of the current track */
+  orderPos: number
+  shuffle: boolean
+  repeat: RepeatMode
   currentPath: string | null
   playing: boolean
   position: number
@@ -137,6 +143,8 @@ interface State {
   togglePlay: () => void
   next: () => void
   prev: () => void
+  toggleShuffle: () => void
+  cycleRepeat: () => void
   seek: (time: number) => void
   setVolume: (v: number) => void
 
@@ -155,8 +163,24 @@ function persistSettings(): void {
     volume: s.volume,
     levelMode: s.levelMode,
     columns: s.columns,
-    acoustidKey: s.acoustidKey
+    acoustidKey: s.acoustidKey,
+    shuffle: s.shuffle,
+    repeat: s.repeat
   })
+}
+
+// Fisher–Yates shuffle of queue indices, with `first` forced to the front so the
+// track the user picked plays now and the rest follow in random order.
+function buildOrder(length: number, shuffle: boolean, first: number): number[] {
+  const order = Array.from({ length }, (_, i) => i)
+  if (!shuffle) return order
+  for (let i = length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    ;[order[i], order[j]] = [order[j], order[i]]
+  }
+  const at = order.indexOf(first)
+  ;[order[0], order[at]] = [order[at], order[0]]
+  return order
 }
 
 export const useStore = create<State>((set, get) => ({
@@ -166,7 +190,10 @@ export const useStore = create<State>((set, get) => ({
   sortKey: 'artist',
   sortDir: 1,
   queue: [],
-  queueIndex: -1,
+  order: [],
+  orderPos: -1,
+  shuffle: false,
+  repeat: 'off',
   currentPath: null,
   playing: false,
   position: 0,
@@ -200,6 +227,8 @@ export const useStore = create<State>((set, get) => ({
       levelMode: settings.levelMode,
       columns: settings.columns?.length ? settings.columns : DEFAULT_COLUMNS,
       acoustidKey: settings.acoustidKey ?? '',
+      shuffle: settings.shuffle ?? false,
+      repeat: settings.repeat ?? 'off',
       ffmpeg,
       fpcalcFound
     })
@@ -308,9 +337,11 @@ export const useStore = create<State>((set, get) => ({
 
   playQueue: (paths, index) => {
     if (!paths.length) return
+    const order = buildOrder(paths.length, get().shuffle, index)
     set({
       queue: paths,
-      queueIndex: index,
+      order,
+      orderPos: 0,
       currentPath: paths[index],
       playbackPath: paths[index],
       playing: true,
@@ -333,23 +364,34 @@ export const useStore = create<State>((set, get) => ({
       set({ playing: true })
     }
   },
-  next: () => {
-    const { queue, queueIndex } = get()
-    if (queueIndex + 1 < queue.length) {
-      get().playQueue(queue, queueIndex + 1)
-    } else {
-      audio.stop()
-      set({ playing: false, currentPath: null, playbackPath: null, position: 0, queueIndex: -1 })
-    }
-  },
+  next: () => playAtOrderPos(get().orderPos + 1),
   prev: () => {
-    const { queue, queueIndex, position } = get()
-    if (position > 3 || queueIndex <= 0) {
+    const { orderPos, position } = get()
+    if (position > 3 || orderPos <= 0) {
       audio.seek(0)
       set({ position: 0 })
     } else {
-      get().playQueue(queue, queueIndex - 1)
+      playAtOrderPos(orderPos - 1)
     }
+  },
+  toggleShuffle: () => {
+    const shuffle = !get().shuffle
+    const { queue, order, orderPos } = get()
+    // rebuild the remaining order so the toggle takes effect immediately, while
+    // keeping the current track playing at the new front
+    const current = order[orderPos] ?? 0
+    set({
+      shuffle,
+      ...(queue.length
+        ? { order: buildOrder(queue.length, shuffle, current), orderPos: 0 }
+        : {})
+    })
+    persistSettings()
+  },
+  cycleRepeat: () => {
+    const modes: RepeatMode[] = ['off', 'all', 'one']
+    set({ repeat: modes[(modes.indexOf(get().repeat) + 1) % modes.length] })
+    persistSettings()
   },
   seek: (time) => {
     audio.seek(time)
@@ -400,7 +442,51 @@ export const useStore = create<State>((set, get) => ({
   }
 }))
 
-audio.onEnded = () => useStore.getState().next()
+// Move to a position in the play order. Past the end: wrap if repeat-all
+// (reshuffling for variety when shuffled), otherwise stop.
+function playAtOrderPos(pos: number): void {
+  const s = useStore.getState()
+  if (!s.queue.length) return
+  let order = s.order
+  if (pos >= order.length) {
+    if (s.repeat !== 'all') {
+      audio.stop()
+      useStore.setState({
+        playing: false,
+        currentPath: null,
+        playbackPath: null,
+        position: 0,
+        orderPos: -1
+      })
+      return
+    }
+    if (s.shuffle) order = buildOrder(s.queue.length, true, order[0] ?? 0)
+    pos = 0
+  } else if (pos < 0) {
+    pos = 0
+  }
+  const path = s.queue[order[pos]]
+  useStore.setState({
+    order,
+    orderPos: pos,
+    currentPath: path,
+    playbackPath: path,
+    playing: true,
+    position: 0
+  })
+  applyLeveling()
+  audio.load(path, true)
+}
+
+audio.onEnded = () => {
+  const s = useStore.getState()
+  if (s.repeat === 'one') {
+    audio.seek(0)
+    void audio.play()
+    return
+  }
+  playAtOrderPos(s.orderPos + 1)
+}
 
 // dev-only: lets the screenshot harness (DEV_EVAL) drive the store
 if ((import.meta as { env?: { DEV?: boolean } }).env?.DEV) {

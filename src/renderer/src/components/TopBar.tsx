@@ -13,7 +13,10 @@ const PATHS = {
   next: 'M16 6h2v12h-2zm-1.5 6L6 18V6z',
   play: 'M8 5v14l11-7z',
   pause: 'M6 5h4v14H6zm8 0h4v14h-4z',
-  volume: 'M3 9v6h4l5 5V4L7 9H3zm13.5 3a4.5 4.5 0 0 0-2.5-4v8a4.5 4.5 0 0 0 2.5-4z'
+  volume: 'M3 9v6h4l5 5V4L7 9H3zm13.5 3a4.5 4.5 0 0 0-2.5-4v8a4.5 4.5 0 0 0 2.5-4z',
+  shuffle:
+    'M10.59 9.17 5.41 4 4 5.41l5.17 5.17 1.42-1.41zM14.5 4l2.04 2.04L4 18.59 5.41 20 17.96 7.46 20 9.5V4h-5.5zm.33 9.41-1.41 1.41 3.13 3.13L14.5 20H20v-5.5l-2.04 2.04-3.13-3.13z',
+  repeat: 'M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4z'
 }
 
 export function TopBar() {
@@ -22,13 +25,22 @@ export function TopBar() {
   const position = useStore((s) => s.position)
   const volume = useStore((s) => s.volume)
   const library = useStore((s) => s.library)
-  const { togglePlay, next, prev, setVolume } = useStore.getState()
+  const shuffle = useStore((s) => s.shuffle)
+  const repeat = useStore((s) => s.repeat)
+  const { togglePlay, next, prev, setVolume, toggleShuffle, cycleRepeat } = useStore.getState()
 
   const track = trackByPath(library, currentPath)
 
   return (
     <div className="topbar">
       <div className="transport">
+        <button
+          className={`btn-icon ${shuffle ? 'active' : ''}`}
+          onClick={toggleShuffle}
+          title={shuffle ? 'Shuffle: on' : 'Shuffle: off'}
+        >
+          <Icon d={PATHS.shuffle} size={15} />
+        </button>
         <button className="btn-icon" onClick={prev} title="Previous">
           <Icon d={PATHS.prev} />
         </button>
@@ -37,6 +49,16 @@ export function TopBar() {
         </button>
         <button className="btn-icon" onClick={next} title="Next">
           <Icon d={PATHS.next} />
+        </button>
+        <button
+          className={`btn-icon ${repeat !== 'off' ? 'active' : ''}`}
+          onClick={cycleRepeat}
+          title={`Repeat: ${repeat}`}
+        >
+          <span className="icon-stack">
+            <Icon d={PATHS.repeat} size={15} />
+            {repeat === 'one' && <span className="repeat-one">1</span>}
+          </span>
         </button>
       </div>
 

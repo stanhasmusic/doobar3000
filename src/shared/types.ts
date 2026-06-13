@@ -20,6 +20,7 @@ export interface Track {
 }
 
 export type LevelMode = 'off' | 'track' | 'album'
+export type RepeatMode = 'off' | 'all' | 'one'
 
 export interface Playlist {
   id: string
@@ -49,6 +50,8 @@ export interface Settings {
   columns: ColumnKey[]
   /** AcoustID application API key (user-provided, for track identification) */
   acoustidKey: string
+  shuffle: boolean
+  repeat: RepeatMode
 }
 
 /** one tag proposal from an AcoustID/MusicBrainz lookup */
