@@ -29,7 +29,9 @@ function createWindow(): void {
     minHeight: 600,
     backgroundColor: '#141417',
     titleBarStyle: 'hidden',
-    titleBarOverlay: { color: '#141417', symbolColor: '#b8b8c0', height: 40 },
+    // initial colors match the dark theme's top bar; the renderer re-tints this to
+    // the active theme on load via the 'set-titlebar-overlay' IPC (see applyTheme)
+    titleBarOverlay: { color: '#1a1a1f', symbolColor: '#9a9aa5', height: 40 },
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),
       contextIsolation: true,
@@ -242,6 +244,9 @@ function registerIpc(): void {
   ipcMain.handle('save-playlists', (_e, p: Playlist[]) => store.savePlaylists(p))
   ipcMain.handle('get-settings', () => store.getSettings())
   ipcMain.handle('save-settings', (_e, s: Settings) => store.saveSettings(s))
+  ipcMain.handle('set-titlebar-overlay', (_e, o: { color: string; symbolColor: string }) => {
+    win?.setTitleBarOverlay({ ...o, height: 40 })
+  })
   ipcMain.handle('get-peaks', (_e, trackPath: string) => store.getPeaks(trackPath))
   ipcMain.handle('save-peaks', (_e, trackPath: string, peaks: number[]) =>
     store.savePeaks(trackPath, peaks)

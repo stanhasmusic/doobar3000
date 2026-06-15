@@ -36,6 +36,12 @@ export function applyTheme(theme: Theme, accentColor: string): void {
     for (const v of accentVars) root.style.removeProperty(v)
   }
   refreshVizColors()
+  // Tint the native Windows caption-button strip to match the top bar so the
+  // min/max/close buttons read as part of the bar instead of a separate region.
+  const cs = getComputedStyle(root)
+  const color = cs.getPropertyValue('--topbar-top').trim() || '#1a1a1f'
+  const symbolColor = cs.getPropertyValue('--text-dim').trim() || '#9a9aa5'
+  void window.api?.setTitleBarOverlay?.({ color, symbolColor })
 }
 
 // Canvas visualizers (spectrum, waveform, VU) can't read CSS vars directly, so we

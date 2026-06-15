@@ -46,7 +46,7 @@ export function LogoMark() {
   // Spin mode, persisted locally (no IPC plumbing needed for a view preference).
   const [mode, setMode] = useState<SpinMode>(() => {
     const m = localStorage.getItem('discSpinMode')
-    return m === 'bpm' || m === 'kick' ? m : 'standard'
+    return m === 'bpm' || m === 'standard' ? m : 'kick' // default: match kick drum
   })
   const changeMode = (m: SpinMode): void => {
     setMode(m)

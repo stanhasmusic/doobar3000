@@ -36,12 +36,12 @@ export interface Playlist {
 export type TopbarWidget = 'logo' | 'transport' | 'nowPlaying' | 'viz' | 'settings' | 'volume'
 
 export const DEFAULT_TOPBAR_LAYOUT: TopbarWidget[] = [
-  'logo',
   'transport',
   'nowPlaying',
+  'logo',
   'viz',
-  'settings',
-  'volume'
+  'volume',
+  'settings'
 ]
 
 export type ColumnKey =

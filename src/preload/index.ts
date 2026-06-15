@@ -18,6 +18,9 @@ const api = {
   savePlaylists: (p: Playlist[]): Promise<void> => ipcRenderer.invoke('save-playlists', p),
   getSettings: (): Promise<Settings> => ipcRenderer.invoke('get-settings'),
   saveSettings: (s: Settings): Promise<void> => ipcRenderer.invoke('save-settings', s),
+  // recolor the native Windows caption-button strip to match the active theme
+  setTitleBarOverlay: (o: { color: string; symbolColor: string }): Promise<void> =>
+    ipcRenderer.invoke('set-titlebar-overlay', o),
   getPeaks: (trackPath: string): Promise<number[] | null> =>
     ipcRenderer.invoke('get-peaks', trackPath),
   savePeaks: (trackPath: string, peaks: number[]): Promise<void> =>
