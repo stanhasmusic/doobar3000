@@ -13,6 +13,7 @@ const api = {
   selectFolder: (): Promise<string | null> => ipcRenderer.invoke('select-folder'),
   scanFolder: (dir: string): Promise<Track[]> => ipcRenderer.invoke('scan-folder', dir),
   getLibrary: (): Promise<Track[]> => ipcRenderer.invoke('get-library'),
+  saveLibrary: (library: Track[]): Promise<void> => ipcRenderer.invoke('save-library', library),
   getPlaylists: (): Promise<Playlist[]> => ipcRenderer.invoke('get-playlists'),
   savePlaylists: (p: Playlist[]): Promise<void> => ipcRenderer.invoke('save-playlists', p),
   getSettings: (): Promise<Settings> => ipcRenderer.invoke('get-settings'),
@@ -47,12 +48,25 @@ const api = {
     ipcRenderer.invoke('apply-tags', trackPath, tags),
   removeTracks: (paths: string[]): Promise<Track[]> => ipcRenderer.invoke('remove-tracks', paths),
   openExternal: (url: string): Promise<void> => ipcRenderer.invoke('open-external', url),
+  revealInExplorer: (trackPath: string): Promise<void> =>
+    ipcRenderer.invoke('reveal-in-explorer', trackPath),
+  fileStat: (trackPath: string): Promise<{ exists: boolean; size: number; modified: number }> =>
+    ipcRenderer.invoke('file-stat', trackPath),
   analyzeLoudness: (): Promise<void> => ipcRenderer.invoke('analyze-loudness'),
   onLufsUpdate: (cb: (u: { path: string; lufs: number; peakDb: number }) => void): void => {
     ipcRenderer.on('lufs-update', (_e, u) => cb(u))
   },
   onLufsProgress: (cb: (p: ScanProgress) => void): void => {
     ipcRenderer.on('lufs-progress', (_e, p: ScanProgress) => cb(p))
+  },
+  analyzeVibe: (): Promise<void> => ipcRenderer.invoke('analyze-vibe'),
+  onVibeUpdate: (
+    cb: (u: { path: string; brightness: number | null; bpm: number | null }) => void
+  ): void => {
+    ipcRenderer.on('vibe-update', (_e, u) => cb(u))
+  },
+  onVibeProgress: (cb: (p: ScanProgress) => void): void => {
+    ipcRenderer.on('vibe-progress', (_e, p: ScanProgress) => cb(p))
   },
   flags: {
     autoplay: process.env.DEV_AUTOPLAY === '1',

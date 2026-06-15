@@ -17,6 +17,9 @@ export interface Track {
   // EBU R128 loudness analysis (null = not yet analyzed)
   lufs: number | null
   peakDb: number | null
+  // Vibe analysis (Phase 4.5; null = not yet analyzed). energy axis reuses lufs.
+  brightness: number | null // mean spectral centroid, Hz (higher = brighter/treblier)
+  bpm: number | null // estimated tempo, beats per minute
 }
 
 export type LevelMode = 'off' | 'track' | 'album'
@@ -28,6 +31,18 @@ export interface Playlist {
   name: string
   trackPaths: string[]
 }
+
+/** the rearrangeable widgets in the top bar, in display order */
+export type TopbarWidget = 'logo' | 'transport' | 'nowPlaying' | 'viz' | 'settings' | 'volume'
+
+export const DEFAULT_TOPBAR_LAYOUT: TopbarWidget[] = [
+  'logo',
+  'transport',
+  'nowPlaying',
+  'viz',
+  'settings',
+  'volume'
+]
 
 export type ColumnKey =
   | 'trackNo'
@@ -49,6 +64,8 @@ export interface Settings {
   levelMode: LevelMode
   /** visible track-list columns, in display order */
   columns: ColumnKey[]
+  /** rearrangeable top-bar widgets, in display order */
+  topbarLayout: TopbarWidget[]
   /** AcoustID application API key (user-provided, for track identification) */
   acoustidKey: string
   shuffle: boolean

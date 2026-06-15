@@ -7,6 +7,7 @@ import path from 'node:path'
 import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import { promisify } from 'node:util'
+import MusicTempo from 'music-tempo'
 import type { FfmpegStatus } from '../shared/types'
 
 const execFileP = promisify(execFile)
@@ -147,6 +148,94 @@ export async function measureLoudness(
       const lufs = [...err.matchAll(/I:\s+(-?[\d.]+) LUFS/g)].at(-1)
       const peak = [...err.matchAll(/Peak:\s+(-?[\d.]+) dBFS/g)].at(-1)
       resolve(lufs ? { lufs: Number(lufs[1]), peakDb: peak ? Number(peak[1]) : 0 } : null)
+    })
+    proc.on('error', () => resolve(null))
+  })
+}
+
+// Vibe analysis (Phase 4.5): mean spectral centroid (brightness) + estimated
+// tempo (BPM). The energy axis is read separately from the existing LUFS value.
+// Both sub-measures decode the file, so they run sequentially to keep at most
+// one extra ffmpeg process per worker (matching the loudness pass's load).
+export async function measureVibe(
+  trackPath: string
+): Promise<{ brightness: number | null; bpm: number | null }> {
+  const ff = await findFfmpeg()
+  if (!ff.found || !ff.binary) return { brightness: null, bpm: null }
+  const brightness = await measureBrightness(ff.binary, trackPath)
+  const bpm = await measureTempo(ff.binary, trackPath)
+  return { brightness, bpm }
+}
+
+// aspectralstats logs the per-frame spectral centroid (Hz) as frame metadata;
+// ametadata=print:file=- emits it to stdout. We average across the track.
+function measureBrightness(binary: string, trackPath: string): Promise<number | null> {
+  return new Promise((resolve) => {
+    const proc = spawn(binary, [
+      '-hide_banner',
+      '-nostats',
+      '-i',
+      trackPath,
+      '-map',
+      'a:0',
+      '-af',
+      'aformat=channel_layouts=mono,aspectralstats=measure=centroid,ametadata=print:file=-',
+      '-f',
+      'null',
+      '-'
+    ])
+    let out = ''
+    proc.stdout.on('data', (d) => (out += d))
+    proc.on('close', () => {
+      let sum = 0
+      let n = 0
+      for (const m of out.matchAll(/centroid=([\d.]+)/g)) {
+        const v = Number(m[1])
+        if (Number.isFinite(v)) {
+          sum += v
+          n++
+        }
+      }
+      resolve(n ? Math.round(sum / n) : null)
+    })
+    proc.on('error', () => resolve(null))
+  })
+}
+
+// Decode up to 4 min of mono PCM at 11.025 kHz (plenty for tempo, bounds cost)
+// and run beat detection over it.
+function measureTempo(binary: string, trackPath: string): Promise<number | null> {
+  return new Promise((resolve) => {
+    const proc = spawn(binary, [
+      '-v',
+      'quiet',
+      '-t',
+      '240',
+      '-i',
+      trackPath,
+      '-map',
+      'a:0',
+      '-ac',
+      '1',
+      '-ar',
+      '11025',
+      '-f',
+      'f32le',
+      '-'
+    ])
+    const chunks: Buffer[] = []
+    proc.stdout.on('data', (d: Buffer) => chunks.push(d))
+    proc.on('close', () => {
+      try {
+        const buf = Buffer.concat(chunks)
+        if (buf.byteLength < 4 * 11025) return resolve(null) // < 1 s of audio
+        const samples = new Float32Array(buf.buffer, buf.byteOffset, Math.floor(buf.byteLength / 4))
+        const mt = new MusicTempo(Array.from(samples))
+        const bpm = Math.round(Number(mt.tempo))
+        resolve(Number.isFinite(bpm) && bpm > 0 ? bpm : null)
+      } catch {
+        resolve(null)
+      }
     })
     proc.on('error', () => resolve(null))
   })

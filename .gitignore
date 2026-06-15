@@ -5,3 +5,4 @@ test-music/
 Music_for_Testing/
 *.log
 .screenshot.png
+*.tsbuildinfo

@@ -187,6 +187,11 @@ prints media-protocol requests and renderer console to the terminal.
 - **MusicBrainz etiquette**: hard 1 req/sec limit and a descriptive `User-Agent` are
   required or it returns 503; Cover Art Archive 404s (no art for that release) are normal
   and negative-cached for the session.
+- **New nullable `Track` fields must be backfilled in `getLibrary`** (`src/main/store.ts`):
+  tracks scanned by an older version lack the new key, which reads as `undefined` at
+  runtime and slips past `=== null` "needs analysis" filters (this bit Phase 4.5's
+  `brightness`/`bpm` — the background pass skipped every legacy track). `getLibrary`
+  normalizes missing analysis fields to `null` on load so the `=== null` checks work.
 - **Track-list grid is inline**: column widths come from `src/renderer/src/columns.tsx`
   and are written as an inline `grid-template-columns` on the header and every row, since
   the visible column set is user-configurable.
@@ -214,8 +219,43 @@ prints media-protocol requests and renderer console to the terminal.
   real library: SMART section populates (genres by count, decades), the genre view filters
   correctly (e.g. "12 tracks — Trip-Hop") and stays sortable. (Chat-assistant panel dropped
   per user, 2026-06-13.)
-- **Phase 4.5 — Audio "vibe" playlists**: cluster tracks by analyzed sound
-  (energy / tempo / brightness). Not started — needs a per-track DSP analysis pass.
+- **Phase 4.5 — Audio "vibe" playlists**: group tracks by analyzed sound
+  (energy / brightness / tempo).
+  - **4.5a — analysis backend: DONE** 2026-06-13 (awaiting user test). A background
+    pass (`analyze-vibe` in `src/main/index.ts`, mirrors the loudness worker — 2 at a
+    time, streams results, persists every 10) fills two new `Track` fields: `brightness`
+    (mean spectral centroid, Hz, via ffmpeg `aspectralstats`) and `bpm` (via an ffmpeg
+    mono-PCM decode → the `music-tempo` package). The **energy** axis reuses the existing
+    `lufs` value, so no third measurement. `measureVibe` lives in `src/main/ffmpeg.ts`.
+    No UI yet — verify by watching `brightness`/`bpm` populate in `library.json`.
+    Validated standalone on real tracks (ALAC m4a decodes fine for analysis): brightness
+    discriminates (≈144 Hz bass-heavy vs ≈1730 Hz full-mix), BPM sane, ~0.6 s/track.
+  - **4.5b — mood buckets + UI: DONE** 2026-06-13 (self-verified via harness, awaiting
+    user test). `smartPlaylists.ts` gained a `'vibe'` `SmartKind`: `assignVibes(library)`
+    normalizes the 3 features (energy=`lufs`, `brightness`, `bpm`) 0..1 across the analyzed
+    library (min-max, relative to your own collection) and assigns each fully-analyzed
+    track to the nearest of 5 fixed mood **prototypes** — **Chill / Mellow / Upbeat /
+    Energetic / Dark** (a track joins exactly one, so buckets partition like genre). They
+    show with a ◓ icon in the SMART sidebar, right under Recently Added, and filter +
+    sort like genre/decade. (Chosen over k-means auto-clustering per Stan, 2026-06-13.)
+    Verified on the real library: all 5 buckets populate; "Upbeat" resolves + filters +
+    sorts. **Normalization = robust 5th–95th-percentile** (per `assignVibes`): plain
+    min-max skewed ~44% into Energetic because a single 5593 Hz outlier stretched the
+    brightness axis; clamping the tails rebalanced the spread (e.g. on one ~350-track
+    snapshot: energetic 152→105, chill 14→38, dark 8→36). **Retune #2 + genre nudge
+    2026-06-13:** repositioned prototypes (Dark = low-bright *and high-energy* = brooding,
+    so it stops competing with Mellow = low-bright + low-energy = soft/warm; that overlap
+    was dumping quiet jazz into Dark), added `AXIS_WEIGHTS` `[0.7,1,1]` (energy=`lufs` is
+    partly mastering loudness, not musical energy, so it's down-weighted), and — the key
+    upgrade — a **genre nudge**: `assignVibes` reads the genre tag and gives the matching
+    mood bucket a head start (`GENRE_PULL` subtracted from that bucket's squared distance,
+    via `GENRE_AFFINITY` + `genreFavoredBucket`). Three audio numbers can't know reggae
+    *feels* chill — that's cultural knowledge in the tag — so genre tips close calls while
+    audio still decides. Took Bob Marley from scattered (energetic/upbeat/dark) to mostly
+    **Chill**, while genuinely loud/fast reggae still goes Energetic. Broad/ambiguous genres
+    (`Electronica`, `Other`) are deliberately unmapped so they stay audio-driven. Remaining
+    levers: tune `GENRE_PULL`/the affinity table, or rebalance `VIBE_BUCKETS`. Parked
+    (needs manual input): per-track 👍/👎 to correct bucket fit.
 - **Final polish**: **color schemes DONE** 2026-06-13 — ⚙ now has a "Color scheme" picker
   with Dark / Light / Midnight / Sepia presets plus a Custom option (dark base + a
   user-chosen accent via a native color wheel / hex input). Themes are CSS-variable
@@ -226,8 +266,15 @@ prints media-protocol requests and renderer console to the terminal.
   (`store.ts`), refreshed by `applyTheme`. The VU meter keeps its green→amber→red *level*
   coding (only its neutral track/peak recolor). **Column reorder is now a true swap**
   (was insert/shift): drop one header on another and they trade places; the target darkens
-  and leans the direction it will travel. Remaining: space the top-right controls off the
-  Windows caption buttons; possibly resizable spectrum/VU meters.
+  and leans the direction it will travel. **Rearrangeable top bar DONE** 2026-06-13 — every
+  top element (logo, transport, now-playing, visualizers, settings, volume) is a draggable
+  widget. The resting bar is completely clean; **right-click → "Rearrange"** enters an edit
+  mode where widgets outline + gently wiggle and can be dragged onto each other to **swap**
+  (Esc / a "Done" pill / clicking off the bar exits; "Reset layout" restores the default
+  order). The order persists in `settings.json` (`topbarLayout`) like columns/theme. This
+  also closes the caption-button gripe: single-row reorder means no widget can ever land
+  under the Windows min/max/close buttons. (`TopBar.tsx` + `.tb-*` styles in `styles.css`.)
+  Remaining: possibly resizable spectrum/VU meters.
 
 ## Where we left off
 
@@ -262,12 +309,67 @@ column reorder switched from insert/shift to a **true swap** (`swapColumns` in
 `TrackList.tsx`) — chosen per Stan but flagged for a real hands-on test; the swap target
 darkens + leans toward the slot it'll move to (`.col-over` / `col-lean-*` in `styles.css`).
 
-Remaining (awaiting Stan's go on order): **Phase 4.5** audio-"vibe" playlists (cluster by
-analyzed sound — needs a per-track DSP pass, not yet started); and the rest of the
-**final-polish** pass — spacing the top-right controls away from the Windows caption
-buttons, and possibly resizable spectrum/VU meters (recommended a splitter handle between
-the two meters, or S/M/L size presets, over per-meter edge-drag).
+**Phase 4.5a (vibe-analysis backend) shipped 2026-06-13** — see the roadmap entry for
+details. Per-track `brightness` + `bpm` now analyze in the background (energy = existing
+`lufs`); new dep `music-tempo` (pure JS, zero deps — respects the no-native-modules rule).
+Build + typecheck clean (the two pre-existing `music-metadata`/`parseFile` TS errors are
+unrelated and don't affect the build). **Fix on first user test (2026-06-13):** the
+281 pre-4.5 tracks lacked the `brightness`/`bpm` keys (read as `undefined`), so the
+`=== null` analysis filter skipped them all and nothing populated — `getLibrary` now
+backfills missing analysis fields to `null` on load (see the gotcha above).
 
+**Phase 4.5b (mood buckets) shipped 2026-06-13** — `assignVibes` in `smartPlaylists.ts`
+sorts each analyzed track into one of 5 fixed mood buckets (Chill / Mellow / Upbeat /
+Energetic / Dark) by normalized energy/brightness/tempo; they appear with a ◓ icon in the
+SMART sidebar and filter/sort like genre. Self-verified (all 5 populate).
+**Tuning + genre nudge 2026-06-13:** percentile normalization fixed an outlier skew, then
+on a varied 362-track library (added BoC / Bob Marley / Vince Guaraldi) the data exposed the
+*feature ceiling*: of the three numbers, brightness is reliable, but energy=`lufs`=mastering
+loudness (loud-mastered reggae reads "energetic") and tempo is octave-error-noisy on
+acoustic material. So prototypes were repositioned (Dark = brooding low-bright + high-energy,
+distinct from Mellow = soft low-bright + low-energy — fixes quiet jazz landing in Dark),
+energy was down-weighted (`AXIS_WEIGHTS`), and a **genre nudge** was added (`GENRE_PULL` /
+`GENRE_AFFINITY` in `assignVibes`) so the genre tag tips close calls the audio can't —
+reggae now lands mostly Chill. After a listen the genre-nudged version was "better, but not perfect."
+
+**Vibe cut / parked 2026-06-13 (Stan's call):** three audio numbers + a genre tag get close
+but can't reliably capture mood — doing it properly needs a real audio-ML embedding model,
+which isn't worth blocking core polish for. So the feature is **parked behind a single flag,
+not deleted**: `export const VIBE_ENABLED = false` at the top of `smartPlaylists.ts` hides the
+◓ buckets from the sidebar and stops the background vibe analysis from auto-triggering (the
+store gates all four `analyzeVibe` calls on it). Every bit of vibe code stays intact and
+dormant, and the `brightness`/`bpm` already computed in `library.json` are left as harmless
+unused fields. **To bring it back, set `VIBE_ENABLED = true` — zero rework.** Remaining levers
+if/when it returns: `GENRE_PULL`/affinity-table tuning, `VIBE_BUCKETS` rebalancing, or a proper
+audio-embedding model. 👍/👎 feedback stays parked too (needs manual input).
+
+**Background-work indicator shipped 2026-06-13** (`src/renderer/src/components/LogoMark.tsx`):
+the app's brand mark is now a **vinyl record** in the top-left of the top bar. It sits
+static when idle and, while any background pass runs (library scan / loudness / vibe — the
+three progress sources are summed), it spins and fills its outer ring clockwise with the
+accent color to show overall progress; hover shows `Analyzing vibe… 168 / 281`. Gives the
+analysis CPU spike a visible reason. Theme-aware (label + arc use `--accent`); SVG uses
+`transform-box: fill-box; transform-origin: center` so the spin stays centered. When the
+last pass finishes it plays a brief **completion beat** — the ring snaps to full, the disc
+pulses once, and the arc fades (a local `finishing` state held ~1.1 s; CSS `disc-beat` +
+`disc-arc-finish`). Verified via the harness (forced a progress state with `DEV_EVAL`).
+
+**Rearrangeable top bar shipped 2026-06-13** (`TopBar.tsx`): every top element is a
+draggable widget. The bar's resting state stays completely clean — rearranging is an opt-in
+**edit mode** (right-click → "Rearrange"; widgets outline + wiggle, drag one onto another to
+swap, Esc / "Done" pill / click-off to exit, "Reset layout" to restore default). The order
+persists as `topbarLayout` in `settings.json`. Chose reorder-only single-row (per Stan) over
+zones/free-form, which also closes the caption-button gripe for free: nothing can slide under
+the Windows min/max/close buttons. Stan first saw an always-on hover grip and found it too
+intrusive ("fixed, polished layout out of the box" is the app's identity), so it became the
+edit-mode gate instead.
+
+Also still open — the rest of the **final-polish** pass: possibly resizable spectrum/VU
+meters (recommended a splitter handle between the two meters, or S/M/L size presets, over
+per-meter edge-drag).
+
+New Phase-4.5 source files: `src/main/...` (`measureVibe` in `ffmpeg.ts`) and
+`src/renderer/src/components/LogoMark.tsx` (vinyl progress mark).
 New Phase-3 source files: `src/renderer/src/columns.tsx` (column registry + cell
 rendering), `src/renderer/src/components/IdentifyDialog.tsx`,
 `src/renderer/src/components/DuplicatesView.tsx`, `src/main/acoustid.ts`, `src/main/art.ts`.

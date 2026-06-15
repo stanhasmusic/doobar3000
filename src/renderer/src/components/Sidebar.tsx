@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { useStore } from '../store'
 import { smartPlaylists } from '../smartPlaylists'
 import { ArtPanel } from './ArtPanel'
+import { ConfirmDialog } from './ConfirmDialog'
 
 export function droppedPaths(e: React.DragEvent): string[] {
   return Array.from(e.dataTransfer.files)
@@ -22,6 +23,7 @@ export function Sidebar() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editName, setEditName] = useState('')
   const [dropTarget, setDropTarget] = useState<string | null>(null)
+  const [pendingDelete, setPendingDelete] = useState<{ id: string; name: string } | null>(null)
 
   const commitRename = () => {
     if (editingId && editName.trim()) renamePlaylist(editingId, editName.trim())
@@ -30,6 +32,7 @@ export function Sidebar() {
 
   return (
     <div className="sidebar">
+      <div className="side-nav">
       <div className="side-section">LIBRARY</div>
       <div
         className={`side-item ${view.type === 'library' ? 'active' : ''}`}
@@ -119,13 +122,14 @@ export function Sidebar() {
             title="Delete playlist"
             onClick={(e) => {
               e.stopPropagation()
-              deletePlaylist(p.id)
+              setPendingDelete({ id: p.id, name: p.name })
             }}
           >
             ×
           </button>
         </div>
       ))}
+      </div>
 
       <ArtPanel />
 
@@ -138,6 +142,22 @@ export function Sidebar() {
             : '+ Import Folder'}
         </button>
       </div>
+
+      {pendingDelete && (
+        <ConfirmDialog
+          title="Delete playlist?"
+          message={
+            <>
+              Delete <strong>{pendingDelete.name}</strong>? The tracks stay in your library.
+            </>
+          }
+          onCancel={() => setPendingDelete(null)}
+          onConfirm={() => {
+            deletePlaylist(pendingDelete.id)
+            setPendingDelete(null)
+          }}
+        />
+      )}
     </div>
   )
 }

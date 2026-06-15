@@ -5,6 +5,7 @@ import { ALL_COLUMNS, cellValue, COLUMN_DEFS } from '../columns'
 import { resolveSmart, smartName } from '../smartPlaylists'
 import { droppedPaths } from './Sidebar'
 import { IdentifyDialog } from './IdentifyDialog'
+import { TrackInfoDialog } from './TrackInfoDialog'
 
 const ROW_HEIGHT = 34
 const OVERSCAN = 10
@@ -70,6 +71,7 @@ export function TrackList() {
   const [menu, setMenu] = useState<MenuState | null>(null)
   const [colMenu, setColMenu] = useState<{ x: number; y: number } | null>(null)
   const [identifyFor, setIdentifyFor] = useState<Track | null>(null)
+  const [infoFor, setInfoFor] = useState<Track | null>(null)
   const roRef = useRef<ResizeObserver | null>(null)
   const [drag, setDrag] = useState<{
     key: ColumnKey
@@ -338,6 +340,22 @@ export function TrackList() {
             Search on Apple Music
           </div>
           <div className="menu-sep" />
+          <div
+            className="menu-item"
+            onClick={() => void window.api.revealInExplorer(menu.track.path)}
+          >
+            Show in Explorer
+          </div>
+          <div
+            className="menu-item"
+            onClick={() => void navigator.clipboard.writeText(menu.track.path)}
+          >
+            Copy file path
+          </div>
+          <div className="menu-item" onClick={() => setInfoFor(menu.track)}>
+            Get Info…
+          </div>
+          <div className="menu-sep" />
           {playlist && (
             <div
               className="menu-item"
@@ -376,6 +394,8 @@ export function TrackList() {
       {identifyFor && (
         <IdentifyDialog track={identifyFor} onClose={() => setIdentifyFor(null)} />
       )}
+
+      {infoFor && <TrackInfoDialog track={infoFor} onClose={() => setInfoFor(null)} />}
     </div>
   )
 }

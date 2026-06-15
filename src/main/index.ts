@@ -6,7 +6,7 @@ import path from 'node:path'
 import { Readable } from 'node:stream'
 import { applyTags, downloadFpcalc, findFpcalc, identify } from './acoustid'
 import { fetchArt, getCachedArt } from './art'
-import { downloadFfmpeg, findFfmpeg, measureLoudness, transcode } from './ffmpeg'
+import { downloadFfmpeg, findFfmpeg, measureLoudness, measureVibe, transcode } from './ffmpeg'
 import { scanFolder, scanPaths } from './scanner'
 import * as store from './store'
 import type { Playlist, Settings, TagCandidate, Track } from '../shared/types'
@@ -85,7 +85,16 @@ function registerIpc(): void {
       const old = byPath.get(t.path)
       byPath.set(
         t.path,
-        old ? { ...t, addedAt: old.addedAt, lufs: old.lufs ?? null, peakDb: old.peakDb ?? null } : t
+        old
+          ? {
+              ...t,
+              addedAt: old.addedAt,
+              lufs: old.lufs ?? null,
+              peakDb: old.peakDb ?? null,
+              brightness: old.brightness ?? null,
+              bpm: old.bpm ?? null
+            }
+          : t
       )
     }
     const merged = [...byPath.values()]
@@ -150,6 +159,21 @@ function registerIpc(): void {
     if (LINK_ALLOWED.test(url)) void shell.openExternal(url)
   })
 
+  // Open the OS file manager with the track selected/highlighted.
+  ipcMain.handle('reveal-in-explorer', (_e, trackPath: string) => {
+    shell.showItemInFolder(path.normalize(trackPath))
+  })
+
+  // File-system facts not stored in the library (size, existence) for the Get Info dialog.
+  ipcMain.handle('file-stat', async (_e, trackPath: string) => {
+    try {
+      const st = await fs.stat(trackPath)
+      return { exists: true, size: st.size, modified: st.mtimeMs }
+    } catch {
+      return { exists: false, size: 0, modified: 0 }
+    }
+  })
+
   // Background loudness analysis: walks every track missing LUFS, two at a time,
   // streaming results to the renderer and persisting periodically.
   let analyzing = false
@@ -181,7 +205,39 @@ function registerIpc(): void {
     }
   })
 
+  // Background vibe analysis (Phase 4.5): brightness (spectral centroid) + BPM
+  // for every track still missing either, two at a time — same shape as the
+  // loudness pass above. The energy axis reuses each track's existing LUFS.
+  let vibing = false
+  ipcMain.handle('analyze-vibe', async () => {
+    if (vibing || !(await findFfmpeg()).found) return
+    vibing = true
+    try {
+      const library = await store.getLibrary()
+      const todo = library.filter((t) => t.brightness === null || t.bpm === null)
+      let done = 0
+      const queue = [...todo]
+      const worker = async (): Promise<void> => {
+        for (let t = queue.shift(); t; t = queue.shift()) {
+          const result = await measureVibe(t.path)
+          if (result.brightness !== null) t.brightness = result.brightness
+          if (result.bpm !== null) t.bpm = result.bpm
+          if (result.brightness !== null || result.bpm !== null)
+            win?.webContents.send('vibe-update', { path: t.path, ...result })
+          done++
+          win?.webContents.send('vibe-progress', { done, total: todo.length })
+          if (done % 10 === 0) await store.saveLibrary(library)
+        }
+      }
+      await Promise.all([worker(), worker()])
+      await store.saveLibrary(library)
+    } finally {
+      vibing = false
+    }
+  })
+
   ipcMain.handle('get-library', () => store.getLibrary())
+  ipcMain.handle('save-library', (_e, library: Track[]) => store.saveLibrary(library))
   ipcMain.handle('get-playlists', () => store.getPlaylists())
   ipcMain.handle('save-playlists', (_e, p: Playlist[]) => store.savePlaylists(p))
   ipcMain.handle('get-settings', () => store.getSettings())

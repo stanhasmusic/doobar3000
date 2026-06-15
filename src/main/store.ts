@@ -2,7 +2,7 @@ import { app } from 'electron'
 import { createHash } from 'node:crypto'
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
-import type { Playlist, Settings, Track } from '../shared/types'
+import { DEFAULT_TOPBAR_LAYOUT, type Playlist, type Settings, type Track } from '../shared/types'
 
 function dataDir(): string {
   return app.getPath('userData')
@@ -21,7 +21,19 @@ async function writeJson(file: string, data: unknown): Promise<void> {
   await fs.writeFile(path.join(dataDir(), file), JSON.stringify(data))
 }
 
-export const getLibrary = () => readJson<Track[]>('library.json', [])
+export const getLibrary = async (): Promise<Track[]> => {
+  const tracks = await readJson<Track[]>('library.json', [])
+  // Backfill nullable analysis fields that may be absent on tracks scanned by an
+  // older version. A missing key reads as `undefined`, which slips past the
+  // `=== null` "needs analysis" checks — normalize so every track has them.
+  for (const t of tracks) {
+    t.lufs ??= null
+    t.peakDb ??= null
+    t.brightness ??= null
+    t.bpm ??= null
+  }
+  return tracks
+}
 export const saveLibrary = (tracks: Track[]) => writeJson('library.json', tracks)
 
 export const getPlaylists = () => readJson<Playlist[]>('playlists.json', [])
@@ -31,6 +43,7 @@ const DEFAULT_SETTINGS: Settings = {
   volume: 0.8,
   levelMode: 'off',
   columns: ['trackNo', 'title', 'artist', 'album', 'genre', 'duration', 'level'],
+  topbarLayout: DEFAULT_TOPBAR_LAYOUT,
   // Bring-your-own AcoustID key: users paste a free application key in ⚙ (it
   // persists in settings.json). Never commit a real key here — it's public-repo source.
   acoustidKey: '',

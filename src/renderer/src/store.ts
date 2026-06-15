@@ -1,15 +1,18 @@
 import { create } from 'zustand'
-import type {
-  ColumnKey,
-  FfmpegStatus,
-  LevelMode,
-  Playlist,
-  RepeatMode,
-  ScanProgress,
-  Theme,
-  Track
+import {
+  DEFAULT_TOPBAR_LAYOUT,
+  type ColumnKey,
+  type FfmpegStatus,
+  type LevelMode,
+  type Playlist,
+  type RepeatMode,
+  type ScanProgress,
+  type Theme,
+  type TopbarWidget,
+  type Track
 } from '../../shared/types'
 import { audio } from './audio'
+import { VIBE_ENABLED } from './smartPlaylists'
 
 // Themes are driven by CSS variables; presets live in styles.css under
 // `:root[data-theme='…']`. 'custom' reuses the dark base and overrides the
@@ -178,16 +181,20 @@ interface State {
   notice: string | null
   levelMode: LevelMode
   columns: ColumnKey[]
+  topbarLayout: TopbarWidget[]
   acoustidKey: string
   theme: Theme
   accentColor: string
   ffmpeg: FfmpegStatus | null
   ffmpegProgress: number | null
   lufsProgress: ScanProgress | null
+  vibeProgress: ScanProgress | null
   fpcalcFound: boolean
   fpcalcInstalling: boolean
   /** actual file being played (a transcode-cache path when the original can't decode) */
   playbackPath: string | null
+  canUndo: boolean
+  canRedo: boolean
 
   init: () => Promise<void>
   importFolder: () => Promise<void>
@@ -195,6 +202,8 @@ interface State {
   dropOnPlaylist: (id: string, paths: string[]) => Promise<void>
   setLevelMode: (m: LevelMode) => void
   setColumns: (c: ColumnKey[]) => void
+  setTopbarLayout: (l: TopbarWidget[]) => void
+  resetTopbarLayout: () => void
   setAcoustidKey: (k: string) => void
   setTheme: (t: Theme) => void
   setAccentColor: (c: string) => void
@@ -202,6 +211,8 @@ interface State {
   downloadFfmpeg: () => Promise<void>
   downloadFpcalc: () => Promise<void>
   showNotice: (msg: string) => void
+  undo: () => void
+  redo: () => void
   setView: (v: View) => void
   setSort: (k: SortKey) => void
   setSelected: (path: string | null) => void
@@ -230,12 +241,61 @@ function persistSettings(): void {
     volume: s.volume,
     levelMode: s.levelMode,
     columns: s.columns,
+    topbarLayout: s.topbarLayout,
     acoustidKey: s.acoustidKey,
     shuffle: s.shuffle,
     repeat: s.repeat,
     theme: s.theme,
     accentColor: s.accentColor
   })
+}
+
+// Snapshot-based undo/redo for library + playlist edits. Both arrays are always
+// replaced wholesale (never mutated in place) elsewhere in this store, so keeping
+// references is safe and cheap. `snapshot(label)` is called *before* a mutation.
+interface HistoryEntry {
+  label: string
+  library: Track[]
+  playlists: Playlist[]
+}
+const undoStack: HistoryEntry[] = []
+const redoStack: HistoryEntry[] = []
+const HISTORY_LIMIT = 15
+
+function syncHistoryFlags(): void {
+  useStore.setState({ canUndo: undoStack.length > 0, canRedo: redoStack.length > 0 })
+}
+
+function snapshot(label: string): void {
+  const s = useStore.getState()
+  undoStack.push({ label, library: s.library, playlists: s.playlists })
+  if (undoStack.length > HISTORY_LIMIT) undoStack.shift()
+  redoStack.length = 0
+  syncHistoryFlags()
+}
+
+// Roll back the most recent snapshot when the action it guarded turned out to be
+// a no-op (e.g. an import where every file was already in the library).
+function discardLastSnapshot(): void {
+  undoStack.pop()
+  syncHistoryFlags()
+}
+
+function applyHistoryEntry(entry: HistoryEntry): void {
+  const cur = useStore.getState()
+  const has = (p: string | null): boolean => !!p && entry.library.some((t) => t.path === p)
+  const viewPlaylistId = cur.view.type === 'playlist' ? cur.view.id : null
+  const viewGone = viewPlaylistId !== null && !entry.playlists.some((p) => p.id === viewPlaylistId)
+  useStore.setState({
+    library: entry.library,
+    playlists: entry.playlists,
+    ...(cur.selectedPath && !has(cur.selectedPath) ? { selectedPath: null } : {}),
+    // if the active view points at a now-deleted playlist, fall back to the library
+    ...(viewGone ? { view: { type: 'library' } as View } : {})
+  })
+  void window.api.saveLibrary(entry.library)
+  void window.api.savePlaylists(entry.playlists)
+  syncHistoryFlags()
 }
 
 // Fisher–Yates shuffle of queue indices, with `first` forced to the front so the
@@ -272,15 +332,19 @@ export const useStore = create<State>((set, get) => ({
   notice: null,
   levelMode: 'off',
   columns: DEFAULT_COLUMNS,
+  topbarLayout: DEFAULT_TOPBAR_LAYOUT,
   acoustidKey: '',
   theme: 'dark',
   accentColor: '#e0556e',
   ffmpeg: null,
   ffmpegProgress: null,
   lufsProgress: null,
+  vibeProgress: null,
   fpcalcFound: false,
   fpcalcInstalling: false,
   playbackPath: null,
+  canUndo: false,
+  canRedo: false,
 
   init: async () => {
     const [library, playlists, settings, ffmpeg, fpcalcFound] = await Promise.all([
@@ -297,6 +361,7 @@ export const useStore = create<State>((set, get) => ({
       volume: settings.volume,
       levelMode: settings.levelMode,
       columns: settings.columns?.length ? settings.columns : DEFAULT_COLUMNS,
+      topbarLayout: settings.topbarLayout?.length ? settings.topbarLayout : DEFAULT_TOPBAR_LAYOUT,
       acoustidKey: settings.acoustidKey ?? '',
       shuffle: settings.shuffle ?? false,
       repeat: settings.repeat ?? 'off',
@@ -306,6 +371,19 @@ export const useStore = create<State>((set, get) => ({
       fpcalcFound
     })
     applyTheme(settings.theme ?? 'dark', settings.accentColor || '#e0556e')
+    window.addEventListener('keydown', (e) => {
+      if (!(e.ctrlKey || e.metaKey)) return
+      const tag = (e.target as HTMLElement | null)?.tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return // don't hijack text editing
+      const k = e.key.toLowerCase()
+      if (k === 'z') {
+        e.preventDefault()
+        e.shiftKey ? get().redo() : get().undo()
+      } else if (k === 'y') {
+        e.preventDefault()
+        get().redo()
+      }
+    })
     window.api.onScanProgress((p) => {
       set({ scanning: p.done >= p.total ? null : p })
     })
@@ -319,26 +397,47 @@ export const useStore = create<State>((set, get) => ({
       })
       if (u.path === get().currentPath) applyLeveling()
     })
-    if (ffmpeg.found && library.some((t) => t.lufs === null)) {
-      void window.api.analyzeLoudness()
+    window.api.onVibeProgress((p) => set({ vibeProgress: p.done >= p.total ? null : p }))
+    window.api.onVibeUpdate((u) => {
+      set({
+        library: get().library.map((t) =>
+          t.path === u.path
+            ? { ...t, brightness: u.brightness ?? t.brightness, bpm: u.bpm ?? t.bpm }
+            : t
+        )
+      })
+    })
+    if (ffmpeg.found) {
+      if (library.some((t) => t.lufs === null)) void window.api.analyzeLoudness()
+      if (VIBE_ENABLED && library.some((t) => t.brightness === null || t.bpm === null))
+        void window.api.analyzeVibe()
     }
   },
 
   importFolder: async () => {
     const dir = await window.api.selectFolder()
     if (!dir) return
+    snapshot('import folder')
     set({ scanning: { done: 0, total: 0 } })
     const library = await window.api.scanFolder(dir)
     set({ library, scanning: null })
-    if (get().ffmpeg?.found) void window.api.analyzeLoudness()
+    if (get().ffmpeg?.found) {
+      void window.api.analyzeLoudness()
+      if (VIBE_ENABLED) void window.api.analyzeVibe()
+    }
   },
 
   importPaths: async (paths) => {
+    snapshot('add tracks')
     set({ scanning: { done: 0, total: 0 } })
     const { library, added } = await window.api.importPaths(paths)
     set({ library, scanning: null })
+    if (!added.length) discardLastSnapshot() // nothing changed — don't leave a no-op undo
     get().showNotice(`Added ${added.length} track${added.length === 1 ? '' : 's'}`)
-    if (get().ffmpeg?.found) void window.api.analyzeLoudness()
+    if (get().ffmpeg?.found) {
+      void window.api.analyzeLoudness()
+      if (VIBE_ENABLED) void window.api.analyzeVibe()
+    }
     return added
   },
 
@@ -355,6 +454,16 @@ export const useStore = create<State>((set, get) => ({
 
   setColumns: (columns) => {
     set({ columns })
+    persistSettings()
+  },
+
+  setTopbarLayout: (topbarLayout) => {
+    set({ topbarLayout })
+    persistSettings()
+  },
+
+  resetTopbarLayout: () => {
+    set({ topbarLayout: DEFAULT_TOPBAR_LAYOUT })
     persistSettings()
   },
 
@@ -376,6 +485,7 @@ export const useStore = create<State>((set, get) => ({
   },
 
   removeFromLibrary: async (paths) => {
+    snapshot(`remove ${paths.length} track${paths.length === 1 ? '' : 's'}`)
     const gone = new Set(paths)
     // pull them from any playlists too, then update the library from disk
     const playlists = get().playlists.map((p) => ({
@@ -398,7 +508,11 @@ export const useStore = create<State>((set, get) => ({
     const ffmpeg = await window.api.ffmpegStatus()
     set({ ffmpeg, ffmpegProgress: null })
     get().showNotice(ok ? 'Decoder pack installed.' : 'Decoder pack download failed.')
-    if (ok && get().library.some((t) => t.lufs === null)) void window.api.analyzeLoudness()
+    if (ok) {
+      if (get().library.some((t) => t.lufs === null)) void window.api.analyzeLoudness()
+      if (VIBE_ENABLED && get().library.some((t) => t.brightness === null || t.bpm === null))
+        void window.api.analyzeVibe()
+    }
   },
 
   downloadFpcalc: async () => {
@@ -414,6 +528,23 @@ export const useStore = create<State>((set, get) => ({
     noticeTimer = setTimeout(() => set({ notice: null }), 5000)
   },
 
+  undo: () => {
+    const entry = undoStack.pop()
+    if (!entry) return
+    const s = get()
+    redoStack.push({ label: entry.label, library: s.library, playlists: s.playlists })
+    applyHistoryEntry(entry)
+    get().showNotice(`Undid: ${entry.label}`)
+  },
+  redo: () => {
+    const entry = redoStack.pop()
+    if (!entry) return
+    const s = get()
+    undoStack.push({ label: entry.label, library: s.library, playlists: s.playlists })
+    applyHistoryEntry(entry)
+    get().showNotice(`Redid: ${entry.label}`)
+  },
+
   setView: (view) => set({ view, selectedPath: null }),
   setSort: (k) => {
     const { sortKey, sortDir } = get()
@@ -427,7 +558,10 @@ export const useStore = create<State>((set, get) => ({
     set({
       queue: paths,
       order,
-      orderPos: 0,
+      // shuffle forces the picked track to the front (→0); unshuffled keeps it at
+      // `index`. Either way orderPos must point at where `index` landed in `order`,
+      // or next/prev step relative to the wrong track.
+      orderPos: order.indexOf(index),
       currentPath: paths[index],
       playbackPath: paths[index],
       playing: true,
@@ -491,6 +625,7 @@ export const useStore = create<State>((set, get) => ({
   },
 
   createPlaylist: (name) => {
+    snapshot('create playlist')
     const playlists = [
       ...get().playlists,
       { id: crypto.randomUUID(), name, trackPaths: [] as string[] }
@@ -499,11 +634,13 @@ export const useStore = create<State>((set, get) => ({
     void window.api.savePlaylists(playlists)
   },
   renamePlaylist: (id, name) => {
+    snapshot('rename playlist')
     const playlists = get().playlists.map((p) => (p.id === id ? { ...p, name } : p))
     set({ playlists })
     void window.api.savePlaylists(playlists)
   },
   deletePlaylist: (id) => {
+    snapshot('delete playlist')
     const playlists = get().playlists.filter((p) => p.id !== id)
     const view = get().view
     set({
@@ -513,6 +650,7 @@ export const useStore = create<State>((set, get) => ({
     void window.api.savePlaylists(playlists)
   },
   addToPlaylist: (id, paths) => {
+    snapshot(`add to playlist`)
     const playlists = get().playlists.map((p) =>
       p.id === id ? { ...p, trackPaths: [...p.trackPaths, ...paths] } : p
     )
@@ -520,6 +658,7 @@ export const useStore = create<State>((set, get) => ({
     void window.api.savePlaylists(playlists)
   },
   removeFromPlaylist: (id, index) => {
+    snapshot('remove from playlist')
     const playlists = get().playlists.map((p) =>
       p.id === id ? { ...p, trackPaths: p.trackPaths.filter((_, i) => i !== index) } : p
     )
@@ -586,16 +725,20 @@ function applyLeveling(): void {
   audio.setLevelGainDb(levelingDb(trackByPath(s.library, s.currentPath), s.levelMode, s.library))
 }
 
-// Chromium can't decode this file (e.g. ALAC). If ffmpeg is installed, transcode
-// to cached FLAC and retry once; otherwise tell the user and skip.
-const transcodeTried = new Set<string>()
+// Chromium can't decode some formats (e.g. ALAC). When the ORIGINAL file errors
+// and ffmpeg is available, transcode to a cached FLAC and switch playback to it.
+// The loop guard is `playbackPath`: if the error arrives while we're already
+// playing a transcode (playbackPath ≠ the original), the transcode itself failed,
+// so we give up and skip. Keying off playbackPath instead of a permanent
+// "already tried" set means a track can be replayed any number of times in a
+// session and still fall back to its cached transcode each time.
 audio.onError = () => {
   const st = useStore.getState()
   const orig = st.currentPath
   const failed = trackByPath(st.library, orig)
   if (!orig || !failed) return
-  if (st.ffmpeg?.found && !transcodeTried.has(orig)) {
-    transcodeTried.add(orig)
+  const playingOriginal = st.playbackPath === orig
+  if (st.ffmpeg?.found && playingOriginal) {
     st.showNotice(`Converting "${failed.title}"…`)
     void window.api.transcode(orig).then((out) => {
       const cur = useStore.getState()

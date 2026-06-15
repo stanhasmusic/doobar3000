@@ -68,7 +68,9 @@ export async function scanPaths(
         codec: meta.format.codec ?? null,
         fileType: path.extname(file).slice(1).toLowerCase() || null,
         lufs: null,
-        peakDb: null
+        peakDb: null,
+        brightness: null,
+        bpm: null
       })
     } catch {
       // unreadable/corrupt file: skip it rather than abort the whole scan
