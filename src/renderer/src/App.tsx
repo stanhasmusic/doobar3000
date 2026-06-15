@@ -4,6 +4,7 @@ import { Sidebar } from './components/Sidebar'
 import { TopBar } from './components/TopBar'
 import { TrackList } from './components/TrackList'
 import { WaveformBar } from './components/WaveformBar'
+import { WelcomeDialog } from './components/WelcomeDialog'
 import { useStore } from './store'
 
 // React StrictMode double-mounts in dev; init must run exactly once
@@ -12,6 +13,11 @@ let initRan = false
 function Content() {
   const view = useStore((s) => s.view)
   return view.type === 'duplicates' ? <DuplicatesView /> : <TrackList />
+}
+
+function Welcome() {
+  const seenWelcome = useStore((s) => s.seenWelcome)
+  return seenWelcome ? null : <WelcomeDialog />
 }
 
 export function App() {
@@ -68,6 +74,7 @@ export function App() {
         <Content />
       </div>
       <WaveformBar />
+      <Welcome />
     </div>
   )
 }

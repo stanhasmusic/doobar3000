@@ -185,6 +185,8 @@ interface State {
   acoustidKey: string
   theme: Theme
   accentColor: string
+  /** first-run welcome dialog is shown until dismissed */
+  seenWelcome: boolean
   ffmpeg: FfmpegStatus | null
   ffmpegProgress: number | null
   lufsProgress: ScanProgress | null
@@ -207,6 +209,7 @@ interface State {
   setAcoustidKey: (k: string) => void
   setTheme: (t: Theme) => void
   setAccentColor: (c: string) => void
+  dismissWelcome: () => void
   removeFromLibrary: (paths: string[]) => Promise<void>
   downloadFfmpeg: () => Promise<void>
   downloadFpcalc: () => Promise<void>
@@ -246,7 +249,8 @@ function persistSettings(): void {
     shuffle: s.shuffle,
     repeat: s.repeat,
     theme: s.theme,
-    accentColor: s.accentColor
+    accentColor: s.accentColor,
+    seenWelcome: s.seenWelcome
   })
 }
 
@@ -336,6 +340,7 @@ export const useStore = create<State>((set, get) => ({
   acoustidKey: '',
   theme: 'dark',
   accentColor: '#e0556e',
+  seenWelcome: true, // assume seen until init loads the real setting (avoids a flash)
   ffmpeg: null,
   ffmpegProgress: null,
   lufsProgress: null,
@@ -367,6 +372,7 @@ export const useStore = create<State>((set, get) => ({
       repeat: settings.repeat ?? 'off',
       theme: settings.theme ?? 'dark',
       accentColor: settings.accentColor || '#e0556e',
+      seenWelcome: settings.seenWelcome ?? false,
       ffmpeg,
       fpcalcFound
     })
@@ -481,6 +487,11 @@ export const useStore = create<State>((set, get) => ({
   setAccentColor: (accentColor) => {
     set({ accentColor })
     if (get().theme === 'custom') applyTheme('custom', accentColor)
+    persistSettings()
+  },
+
+  dismissWelcome: () => {
+    set({ seenWelcome: true })
     persistSettings()
   },
 

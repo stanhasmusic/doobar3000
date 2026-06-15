@@ -1,8 +1,12 @@
 node_modules/
 out/
 dist/
+release/
 test-music/
 Music_for_Testing/
 *.log
 .screenshot.png
+.pkg-shot.png
 *.tsbuildinfo
+# generated from build/icon.svg via `npm run make-icon`
+build/icon.png

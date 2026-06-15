@@ -1418,6 +1418,53 @@ body {
   filter: brightness(1.08);
 }
 
+/* ---------- Welcome / first-run dialog ---------- */
+
+.modal-welcome {
+  width: 520px;
+}
+
+.welcome-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 18px 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+.welcome-mark {
+  width: 44px;
+  height: 44px;
+  flex: none;
+}
+
+.welcome-sub {
+  margin-top: 3px;
+  font-size: 12px;
+  color: var(--accent);
+}
+
+.welcome-body p {
+  margin: 0 0 12px;
+}
+
+.welcome-body ul {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.welcome-body li {
+  line-height: 1.5;
+}
+
+.welcome-body b {
+  color: var(--text);
+  font-weight: 600;
+}
+
 /* ---------- Track info dialog ---------- */
 
 .modal-info {

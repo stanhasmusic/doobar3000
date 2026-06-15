@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <!-- Doobar 3000 app icon: the brand vinyl mark, baked with the default accent
+       (#e0556e) since this rasterizes standalone (no CSS vars). -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#26262f"/>
+      <stop offset="1" stop-color="#151518"/>
+    </linearGradient>
+    <radialGradient id="disc" cx="0.38" cy="0.34" r="0.85">
+      <stop offset="0" stop-color="#1c1c22"/>
+      <stop offset="1" stop-color="#101013"/>
+    </radialGradient>
+  </defs>
+
+  <rect x="6" y="6" width="244" height="244" rx="56" fill="url(#bg)"/>
+
+  <!-- vinyl disc -->
+  <circle cx="128" cy="128" r="92" fill="url(#disc)" stroke="rgba(255,255,255,0.06)" stroke-width="1.5"/>
+  <circle cx="128" cy="128" r="78" fill="none" stroke="rgba(255,255,255,0.07)" stroke-width="1.5"/>
+  <circle cx="128" cy="128" r="64" fill="none" stroke="rgba(255,255,255,0.07)" stroke-width="1.5"/>
+  <circle cx="128" cy="128" r="50" fill="none" stroke="rgba(255,255,255,0.07)" stroke-width="1.5"/>
+
+  <!-- bright pixel orbiting the rim (the brand's spin cue) -->
+  <rect x="122" y="44" width="12" height="12" fill="rgba(255,255,255,0.85)"/>
+
+  <!-- accent label + center hole -->
+  <circle cx="128" cy="128" r="30" fill="#e0556e"/>
+  <circle cx="128" cy="128" r="30" fill="none" stroke="rgba(255,255,255,0.16)" stroke-width="1.5"/>
+  <rect x="116" y="124" width="8" height="8" fill="rgba(0,0,0,0.30)"/>
+  <rect x="132" y="124" width="8" height="8" fill="rgba(0,0,0,0.30)"/>
+  <rect x="124" y="112" width="8" height="8" fill="rgba(255,255,255,0.42)"/>
+  <circle cx="128" cy="128" r="6" fill="#151518"/>
+
+  <!-- swing-arm tonearm (engaged pose) -->
+  <g stroke-linecap="butt">
+    <line x1="214" y1="50" x2="158" y2="98" stroke="#9a9aa6" stroke-width="9"/>
+    <line x1="214" y1="50" x2="224" y2="42" stroke="#9a9aa6" stroke-width="11"/>
+    <rect x="146" y="92" width="20" height="20" fill="#e8e8ec"/>
+    <rect x="151" y="112" width="7" height="10" fill="#e0556e"/>
+    <rect x="206" y="40" width="22" height="22" rx="2" fill="#26262f" stroke="#9a9aa6" stroke-width="2"/>
+    <rect x="212" y="46" width="10" height="10" fill="#9a9aa6"/>
+  </g>
+</svg>

@@ -50,7 +50,8 @@ const DEFAULT_SETTINGS: Settings = {
   shuffle: false,
   repeat: 'off',
   theme: 'dark',
-  accentColor: '#e0556e'
+  accentColor: '#e0556e',
+  seenWelcome: false
 }
 export const getSettings = async (): Promise<Settings> => ({
   ...DEFAULT_SETTINGS,

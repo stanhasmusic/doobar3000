@@ -74,6 +74,8 @@ export interface Settings {
   theme: Theme
   /** accent color (hex) used when theme === 'custom' */
   accentColor: string
+  /** true once the user has dismissed the first-run welcome/alpha-notes dialog */
+  seenWelcome: boolean
 }
 
 /** one tag proposal from an AcoustID/MusicBrainz lookup */
