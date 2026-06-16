@@ -522,6 +522,8 @@ export const useStore = create<State>((set, get) => ({
       selectedPaths: get().selectedPaths.filter((p) => !gone.has(p)),
       ...(get().selectionAnchor && gone.has(get().selectionAnchor!) ? { selectionAnchor: null } : {})
     })
+    // keep the play queue/now-playing coherent if any removed track was queued
+    pruneQueue(gone)
     get().showNotice(`Removed ${paths.length} track${paths.length === 1 ? '' : 's'} from library`)
   },
 
@@ -731,6 +733,77 @@ function playAtOrderPos(pos: number): void {
   })
   applyLeveling()
   audio.load(path, true)
+}
+
+// Drop paths from the play queue (e.g. when tracks are removed from the library)
+// while keeping playback coherent. Surviving tracks keep their traversal order.
+// If the track currently playing was removed, advance to the next survivor in the
+// play order (wrapping under repeat-all, stopping if none remain); if the queue
+// empties entirely, stop.
+function pruneQueue(gone: Set<string>): void {
+  const s = useStore.getState()
+  if (!s.queue.length || !s.queue.some((p) => gone.has(p))) return // queue untouched
+
+  // Surviving queue entries, in queue order, with a map from old → new index so
+  // the order[] indices (which point into the queue) can be remapped in place.
+  const survived = s.queue.map((p, i) => ({ p, i })).filter(({ p }) => !gone.has(p))
+  const newQueue = survived.map(({ p }) => p)
+  const oldToNew = new Map<number, number>()
+  survived.forEach(({ i }, n) => oldToNew.set(i, n))
+  const newOrder = s.order.filter((qi) => oldToNew.has(qi)).map((qi) => oldToNew.get(qi)!)
+
+  const stop = (): void => {
+    audio.stop()
+    useStore.setState({
+      queue: newQueue,
+      order: newOrder,
+      orderPos: -1,
+      currentPath: null,
+      playbackPath: null,
+      playing: false,
+      position: 0
+    })
+  }
+
+  if (!newQueue.length) return stop() // removed the whole queue
+
+  // Current track survived (or nothing was playing): keep it playing, just
+  // re-point the queue/order/orderPos at it. playbackPath is left untouched so a
+  // transcode fallback keeps streaming.
+  if (s.currentPath == null || !gone.has(s.currentPath)) {
+    const curIdx = s.currentPath == null ? -1 : newQueue.indexOf(s.currentPath)
+    useStore.setState({
+      queue: newQueue,
+      order: newOrder,
+      orderPos: curIdx < 0 ? -1 : newOrder.indexOf(curIdx)
+    })
+    return
+  }
+
+  // The playing track was removed → resume from the next survivor in the order.
+  let nextIdx = -1
+  for (let p = s.orderPos + 1; p < s.order.length; p++) {
+    const ni = oldToNew.get(s.order[p])
+    if (ni !== undefined) {
+      nextIdx = ni
+      break
+    }
+  }
+  if (nextIdx < 0 && s.repeat === 'all') nextIdx = newOrder[0] // wrap to the front
+  if (nextIdx < 0) return stop() // nothing after it, not repeating
+
+  const nextPath = newQueue[nextIdx]
+  useStore.setState({
+    queue: newQueue,
+    order: newOrder,
+    orderPos: newOrder.indexOf(nextIdx),
+    currentPath: nextPath,
+    playbackPath: nextPath,
+    playing: s.playing,
+    position: 0
+  })
+  applyLeveling()
+  audio.load(nextPath, s.playing)
 }
 
 audio.onEnded = () => {
