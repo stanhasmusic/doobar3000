@@ -183,7 +183,10 @@ interface State {
   position: number
   volume: number
   scanning: ScanProgress | null
-  selectedPath: string | null
+  /** all currently-selected track paths (multi-select) */
+  selectedPaths: string[]
+  /** the row a Shift-range extends from / a plain click sets */
+  selectionAnchor: string | null
   notice: string | null
   levelMode: LevelMode
   columns: ColumnKey[]
@@ -224,7 +227,12 @@ interface State {
   redo: () => void
   setView: (v: View) => void
   setSort: (k: SortKey) => void
+  /** plain click — select exactly this row (or clear with null) */
   setSelected: (path: string | null) => void
+  /** Ctrl/Cmd-click — add or remove one row from the selection */
+  toggleSelected: (path: string) => void
+  /** Shift-click — replace selection with the given range of paths */
+  selectRange: (paths: string[]) => void
 
   playQueue: (paths: string[], index: number) => void
   togglePlay: () => void
@@ -293,13 +301,14 @@ function discardLastSnapshot(): void {
 
 function applyHistoryEntry(entry: HistoryEntry): void {
   const cur = useStore.getState()
-  const has = (p: string | null): boolean => !!p && entry.library.some((t) => t.path === p)
+  const live = new Set(entry.library.map((t) => t.path))
   const viewPlaylistId = cur.view.type === 'playlist' ? cur.view.id : null
   const viewGone = viewPlaylistId !== null && !entry.playlists.some((p) => p.id === viewPlaylistId)
   useStore.setState({
     library: entry.library,
     playlists: entry.playlists,
-    ...(cur.selectedPath && !has(cur.selectedPath) ? { selectedPath: null } : {}),
+    selectedPaths: cur.selectedPaths.filter((p) => live.has(p)),
+    ...(cur.selectionAnchor && !live.has(cur.selectionAnchor) ? { selectionAnchor: null } : {}),
     // if the active view points at a now-deleted playlist, fall back to the library
     ...(viewGone ? { view: { type: 'library' } as View } : {})
   })
@@ -338,7 +347,8 @@ export const useStore = create<State>((set, get) => ({
   position: 0,
   volume: 0.8,
   scanning: null,
-  selectedPath: null,
+  selectedPaths: [],
+  selectionAnchor: null,
   notice: null,
   levelMode: 'off',
   columns: DEFAULT_COLUMNS,
@@ -514,8 +524,11 @@ export const useStore = create<State>((set, get) => ({
       void window.api.savePlaylists(playlists)
     }
     const library = await window.api.removeTracks(paths)
-    const cleared = get().currentPath && gone.has(get().currentPath!)
-    set({ library, ...(cleared ? { selectedPath: null } : {}) })
+    set({
+      library,
+      selectedPaths: get().selectedPaths.filter((p) => !gone.has(p)),
+      ...(get().selectionAnchor && gone.has(get().selectionAnchor!) ? { selectionAnchor: null } : {})
+    })
     get().showNotice(`Removed ${paths.length} track${paths.length === 1 ? '' : 's'} from library`)
   },
 
@@ -562,12 +575,19 @@ export const useStore = create<State>((set, get) => ({
     get().showNotice(`Redid: ${entry.label}`)
   },
 
-  setView: (view) => set({ view, selectedPath: null }),
+  setView: (view) => set({ view, selectedPaths: [], selectionAnchor: null }),
   setSort: (k) => {
     const { sortKey, sortDir } = get()
     set(k === sortKey ? { sortDir: sortDir === 1 ? -1 : 1 } : { sortKey: k, sortDir: 1 })
   },
-  setSelected: (selectedPath) => set({ selectedPath }),
+  setSelected: (path) =>
+    set({ selectedPaths: path ? [path] : [], selectionAnchor: path }),
+  toggleSelected: (path) => {
+    const cur = get().selectedPaths
+    const next = cur.includes(path) ? cur.filter((p) => p !== path) : [...cur, path]
+    set({ selectedPaths: next, selectionAnchor: path })
+  },
+  selectRange: (paths) => set({ selectedPaths: paths }),
 
   playQueue: (paths, index) => {
     if (!paths.length) return

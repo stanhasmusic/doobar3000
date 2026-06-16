@@ -51,6 +51,10 @@ const api = {
     ipcRenderer.invoke('identify-track', trackPath, apiKey),
   applyTags: (trackPath: string, tags: TagCandidate): Promise<Track[] | null> =>
     ipcRenderer.invoke('apply-tags', trackPath, tags),
+  applyAlbumTags: (
+    paths: string[],
+    fields: { album: string; albumArtist: string; year: number | null }
+  ): Promise<Track[] | null> => ipcRenderer.invoke('apply-album-tags', paths, fields),
   removeTracks: (paths: string[]): Promise<Track[]> => ipcRenderer.invoke('remove-tracks', paths),
   openExternal: (url: string): Promise<void> => ipcRenderer.invoke('open-external', url),
   revealInExplorer: (trackPath: string): Promise<void> =>

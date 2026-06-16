@@ -4,7 +4,8 @@ import { createReadStream } from 'node:fs'
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
 import { Readable } from 'node:stream'
-import { applyTags, downloadFpcalc, findFpcalc, identify } from './acoustid'
+import { applyAlbumTags, applyTags, downloadFpcalc, findFpcalc, identify } from './acoustid'
+import type { AlbumFields } from './acoustid'
 import { clearArt, fetchArt, getCachedArt, setArt } from './art'
 import { downloadFfmpeg, findFfmpeg, measureLoudness, measureVibe, transcode } from './ffmpeg'
 import { scanFolder, scanPaths } from './scanner'
@@ -159,6 +160,14 @@ function registerIpc(): void {
   ipcMain.handle('apply-tags', async (_e, trackPath: string, tags: TagCandidate) => {
     if (!(await applyTags(trackPath, tags))) return null
     const found = await scanPaths([trackPath], () => {})
+    return found.length ? (await mergeIntoLibrary(found)).library : null
+  })
+
+  // push album-level tags to several files at once, then rescan the ones written
+  ipcMain.handle('apply-album-tags', async (_e, paths: string[], fields: AlbumFields) => {
+    const written = await applyAlbumTags(paths, fields)
+    if (!written.length) return null
+    const found = await scanPaths(written, () => {})
     return found.length ? (await mergeIntoLibrary(found)).library : null
   })
 

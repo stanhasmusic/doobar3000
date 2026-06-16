@@ -60,11 +60,20 @@ export function TrackList() {
   const sortKey = useStore((s) => s.sortKey)
   const sortDir = useStore((s) => s.sortDir)
   const currentPath = useStore((s) => s.currentPath)
-  const selectedPath = useStore((s) => s.selectedPath)
+  const selectedPaths = useStore((s) => s.selectedPaths)
   const levelMode = useStore((s) => s.levelMode)
   const columns = useStore((s) => s.columns)
-  const { playQueue, setSort, setSelected, setColumns, addToPlaylist, removeFromPlaylist } =
-    useStore.getState()
+  const {
+    playQueue,
+    setSort,
+    setSelected,
+    toggleSelected,
+    selectRange,
+    setColumns,
+    addToPlaylist,
+    removeFromPlaylist
+  } = useStore.getState()
+  const selectedSet = useMemo(() => new Set(selectedPaths), [selectedPaths])
 
   const [scrollTop, setScrollTop] = useState(0)
   const [viewportH, setViewportH] = useState(600)
@@ -146,6 +155,21 @@ export function TrackList() {
       rows.map((t) => t.path),
       index
     )
+
+  // Click selection: plain = one row, Ctrl/Cmd = toggle, Shift = range from anchor
+  const onRowClick = (e: React.MouseEvent, index: number, path: string) => {
+    if (e.shiftKey) {
+      const anchor = useStore.getState().selectionAnchor
+      const from = anchor ? rows.findIndex((t) => t.path === anchor) : -1
+      if (from < 0) return setSelected(path)
+      const [lo, hi] = from < index ? [from, index] : [index, from]
+      selectRange(rows.slice(lo, hi + 1).map((t) => t.path))
+    } else if (e.ctrlKey || e.metaKey) {
+      toggleSelected(path)
+    } else {
+      setSelected(path)
+    }
+  }
 
   // dropping files/folders from Explorer anywhere on the track area imports them
   const dropProps = {
@@ -273,14 +297,16 @@ export function TrackList() {
               <div
                 key={`${t.path}-${index}`}
                 className={`row ${isCurrent ? 'current' : ''} ${
-                  t.path === selectedPath ? 'selected' : ''
+                  selectedSet.has(t.path) ? 'selected' : ''
                 } ${index % 2 ? 'odd' : ''}`}
                 style={{ top: index * ROW_HEIGHT, gridTemplateColumns: gridTemplate }}
-                onClick={() => setSelected(t.path)}
+                onClick={(e) => onRowClick(e, index, t.path)}
                 onDoubleClick={() => playRow(index)}
                 onContextMenu={(e) => {
                   e.preventDefault()
-                  setSelected(t.path)
+                  // right-clicking outside the current selection narrows to that row;
+                  // right-clicking a selected row keeps the whole selection
+                  if (!selectedSet.has(t.path)) setSelected(t.path)
                   setMenu({ x: e.clientX, y: e.clientY, track: t, rowIndex: index })
                 }}
               >
@@ -299,6 +325,7 @@ export function TrackList() {
         <Notice />
         {rows.length} track{rows.length === 1 ? '' : 's'}
         {playlist ? ` — ${playlist.name}` : smartId ? ` — ${smartName(smartId)}` : ''}
+        {selectedPaths.length > 1 ? ` · ${selectedPaths.length} selected` : ''}
       </div>
 
       {menu && (
@@ -310,14 +337,14 @@ export function TrackList() {
             Identify (auto-tag)…
           </div>
           <div className="menu-item submenu-parent">
-            Add to Playlist ▸
+            Add {selectedPaths.length > 1 ? `${selectedPaths.length} tracks` : 'to'} Playlist ▸
             <div className="submenu">
               {playlists.length ? (
                 playlists.map((p) => (
                   <div
                     key={p.id}
                     className="menu-item"
-                    onClick={() => addToPlaylist(p.id, [menu.track.path])}
+                    onClick={() => addToPlaylist(p.id, selectedPaths)}
                   >
                     {p.name}
                   </div>
@@ -366,9 +393,9 @@ export function TrackList() {
           )}
           <div
             className="menu-item danger"
-            onClick={() => void useStore.getState().removeFromLibrary([menu.track.path])}
+            onClick={() => void useStore.getState().removeFromLibrary(selectedPaths)}
           >
-            Remove from library
+            Remove {selectedPaths.length > 1 ? `${selectedPaths.length} tracks` : ''} from library
           </div>
         </div>
       )}

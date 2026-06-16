@@ -165,34 +165,34 @@ export async function identify(trackPath: string, apiKey: string): Promise<Ident
       }
     }
   }
+  // All release groups of one matched recording share the same AcoustID score,
+  // so the secondary keys do the real ordering. Treat full albums AND
+  // compilations as equally wanted (a track's "right" album is often a
+  // compilation like "Legend"); only push singles/EPs/other below them. Then
+  // earliest release first, so the original album and classic comps surface.
   const typeRank = (t: string): number =>
-    t.includes('Compilation') ? 2 : t.startsWith('Album') ? 0 : 1
+    t.startsWith('Album') || t.includes('Compilation') ? 0 : 1
   candidates.sort(
     (a, b) =>
       b.score - a.score || typeRank(a.releaseGroupType) - typeRank(b.releaseGroupType) ||
       (a.year ?? 9999) - (b.year ?? 9999)
   )
-  return { ok: true, candidates: candidates.slice(0, 6) }
+  return { ok: true, candidates: candidates.slice(0, 20) }
 }
 
-// Write tags by remuxing with ffmpeg (-c copy = audio bytes untouched). The
-// original is kept as .bak until the swap succeeds, then deleted.
-export async function applyTags(trackPath: string, tags: TagCandidate): Promise<boolean> {
+const metaArg = (k: string, v: string | number | null): string[] =>
+  v !== null && v !== '' ? ['-metadata', `${k}=${v}`] : []
+
+// Write the given -metadata args by remuxing with ffmpeg (-c copy = audio bytes
+// untouched; unspecified tags are carried over from the source). The original is
+// kept as .bak until the swap succeeds, then deleted.
+async function remuxWithMeta(trackPath: string, meta: string[]): Promise<boolean> {
+  if (!meta.length) return true
   const ff = await findFfmpeg()
   if (!ff.found || !ff.binary) return false
   const ext = path.extname(trackPath)
   const tmp = trackPath.slice(0, -ext.length) + '.doobar-tmp' + ext
   const bak = trackPath + '.bak'
-  const meta: string[] = []
-  const push = (k: string, v: string | number | null) => {
-    if (v !== null && v !== '') meta.push('-metadata', `${k}=${v}`)
-  }
-  push('title', tags.title)
-  push('artist', tags.artist)
-  push('album_artist', tags.albumArtist)
-  push('album', tags.album)
-  push('date', tags.year)
-  push('track', tags.trackNo)
   try {
     await execFileP(
       ff.binary,
@@ -215,7 +215,7 @@ export async function applyTags(trackPath: string, tags: TagCandidate): Promise<
     await fs.rm(bak, { force: true })
     return true
   } catch (err) {
-    console.error('applyTags failed:', trackPath, err)
+    console.error('remux failed:', trackPath, err)
     await fs.rm(tmp, { force: true }).catch(() => {})
     // if the original got moved aside but the swap failed, put it back
     try {
@@ -225,4 +225,29 @@ export async function applyTags(trackPath: string, tags: TagCandidate): Promise<
     }
     return false
   }
+}
+
+export function applyTags(trackPath: string, tags: TagCandidate): Promise<boolean> {
+  return remuxWithMeta(trackPath, [
+    ...metaArg('title', tags.title),
+    ...metaArg('artist', tags.artist),
+    ...metaArg('album_artist', tags.albumArtist),
+    ...metaArg('album', tags.album),
+    ...metaArg('date', tags.year),
+    ...metaArg('track', tags.trackNo)
+  ])
+}
+
+// Apply only album-level fields to many files, leaving each one's title/track
+// number intact — used to push an Identify match to the rest of an album.
+export type AlbumFields = { album: string; albumArtist: string; year: number | null }
+export async function applyAlbumTags(paths: string[], fields: AlbumFields): Promise<string[]> {
+  const meta = [
+    ...metaArg('album', fields.album),
+    ...metaArg('album_artist', fields.albumArtist),
+    ...metaArg('date', fields.year)
+  ]
+  const ok: string[] = []
+  for (const p of paths) if (await remuxWithMeta(p, meta)) ok.push(p)
+  return ok
 }
