@@ -4,6 +4,7 @@ import { formatTime, trackByPath, useStore } from '../store'
 import { LogoMark } from './LogoMark'
 import { SettingsMenu } from './SettingsMenu'
 import { Spectrum, VuMeter } from './Visualizers'
+import { clampToViewport } from '../clampMenu'
 
 const Icon = ({ d, size = 16 }: { d: string; size?: number }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor">
@@ -235,7 +236,7 @@ export function TopBar() {
       )}
 
       {menu && (
-        <div className="context-menu" style={{ left: menu.x, top: menu.y }}>
+        <div ref={clampToViewport} className="context-menu" style={{ left: menu.x, top: menu.y }}>
           <div className="menu-head">Top bar</div>
           {!arranging && (
             <div

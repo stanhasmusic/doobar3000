@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useStore, trackByPath } from '../store'
 import { audio } from '../audio'
+import { clampToViewport } from '../clampMenu'
 
 // Doobar 3000's brand mark: a vinyl record with a swing-arm tonearm. It doubles
 // as the transport's tactile control and the background-work indicator:
@@ -157,7 +158,7 @@ export function LogoMark() {
 
   // right-click spin-mode menu
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null)
-  const menuRef = useRef<HTMLDivElement>(null)
+  const menuRef = useRef<HTMLDivElement | null>(null)
   useEffect(() => {
     if (!menu) return
     const close = (e: MouseEvent): void => {
@@ -249,7 +250,14 @@ export function LogoMark() {
         </svg>
       </button>
       {menu && (
-        <div ref={menuRef} className="context-menu" style={{ left: menu.x, top: menu.y }}>
+        <div
+          ref={(el) => {
+            menuRef.current = el
+            clampToViewport(el)
+          }}
+          className="context-menu"
+          style={{ left: menu.x, top: menu.y }}
+        >
           <div className="menu-head">Disc spin</div>
           {MODES.map((m) => (
             <div

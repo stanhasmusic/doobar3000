@@ -6,6 +6,7 @@ import { resolveSmart, smartName } from '../smartPlaylists'
 import { droppedPaths } from './Sidebar'
 import { IdentifyDialog } from './IdentifyDialog'
 import { TrackInfoDialog } from './TrackInfoDialog'
+import { clampToViewport } from '../clampMenu'
 
 const ROW_HEIGHT = 34
 const OVERSCAN = 10
@@ -329,7 +330,7 @@ export function TrackList() {
       </div>
 
       {menu && (
-        <div className="context-menu" style={{ left: menu.x, top: menu.y }}>
+        <div ref={clampToViewport} className="context-menu" style={{ left: menu.x, top: menu.y }}>
           <div className="menu-item" onClick={() => playRow(menu.rowIndex)}>
             Play
           </div>
@@ -401,7 +402,7 @@ export function TrackList() {
       )}
 
       {colMenu && (
-        <div className="context-menu" style={{ left: colMenu.x, top: colMenu.y }}>
+        <div ref={clampToViewport} className="context-menu" style={{ left: colMenu.x, top: colMenu.y }}>
           <div className="menu-head">Columns</div>
           {ALL_COLUMNS.map((key) => (
             <div key={key} className="menu-item check" onClick={() => toggleColumn(key)}>

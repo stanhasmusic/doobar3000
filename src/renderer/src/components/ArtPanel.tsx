@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { trackByPath, useStore } from '../store'
+import { clampToViewport } from '../clampMenu'
 
 const cache = new Map<string, string | null>() // album key → data URL
 
@@ -92,7 +93,7 @@ export function ArtPanel() {
         )}
       </div>
       {menu && (
-        <div className="context-menu" style={{ left: menu.x, top: menu.y }}>
+        <div ref={clampToViewport} className="context-menu" style={{ left: menu.x, top: menu.y }}>
           <div className="menu-item" onClick={() => void chooseArt()}>
             Set album art…
           </div>
