@@ -10,3 +10,6 @@ Music_for_Testing/
 *.tsbuildinfo
 # generated from build/icon.svg via `npm run make-icon`
 build/icon.png
+# personal agent skills — general-purpose dev tooling, not project-specific
+.agents/
+skills-lock.json
