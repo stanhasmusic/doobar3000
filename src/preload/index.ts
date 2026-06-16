@@ -43,6 +43,8 @@ const api = {
     ipcRenderer.invoke('get-art', trackPath, albumKey),
   fetchArt: (albumArtist: string, album: string): Promise<string | null> =>
     ipcRenderer.invoke('fetch-art', albumArtist, album),
+  setArt: (albumKey: string): Promise<string | null> => ipcRenderer.invoke('set-art', albumKey),
+  clearArt: (albumKey: string): Promise<void> => ipcRenderer.invoke('clear-art', albumKey),
   fpcalcStatus: (): Promise<boolean> => ipcRenderer.invoke('fpcalc-status'),
   fpcalcDownload: (): Promise<boolean> => ipcRenderer.invoke('fpcalc-download'),
   identifyTrack: (trackPath: string, apiKey: string): Promise<IdentifyResult> =>

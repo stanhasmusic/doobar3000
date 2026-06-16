@@ -5,7 +5,7 @@ import { promises as fs } from 'node:fs'
 import path from 'node:path'
 import { Readable } from 'node:stream'
 import { applyTags, downloadFpcalc, findFpcalc, identify } from './acoustid'
-import { fetchArt, getCachedArt } from './art'
+import { clearArt, fetchArt, getCachedArt, setArt } from './art'
 import { downloadFfmpeg, findFfmpeg, measureLoudness, measureVibe, transcode } from './ffmpeg'
 import { scanFolder, scanPaths } from './scanner'
 import * as store from './store'
@@ -135,6 +135,19 @@ function registerIpc(): void {
   ipcMain.handle('fetch-art', (_e, albumArtist: string, album: string) =>
     fetchArt(albumArtist, album)
   )
+
+  // manual override: let the user pick an image to use as an album's cover
+  ipcMain.handle('set-art', async (_e, albumKey: string) => {
+    const res = await dialog.showOpenDialog(win!, {
+      title: 'Choose album art',
+      properties: ['openFile'],
+      filters: [{ name: 'Images', extensions: ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'] }]
+    })
+    if (res.canceled || !res.filePaths[0]) return null
+    return setArt(albumKey, await fs.readFile(res.filePaths[0]))
+  })
+
+  ipcMain.handle('clear-art', (_e, albumKey: string) => clearArt(albumKey))
 
   ipcMain.handle('fpcalc-status', async () => (await findFpcalc()) !== null)
   ipcMain.handle('fpcalc-download', () => downloadFpcalc())

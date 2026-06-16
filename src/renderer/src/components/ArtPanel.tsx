@@ -9,6 +9,8 @@ export function ArtPanel() {
   const [art, setArt] = useState<string | null>(null)
   const [zoom, setZoom] = useState(false)
 
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null)
+
   const track = trackByPath(library, currentPath)
   const albumKey = track ? `${track.albumArtist}|${track.album}` : null
 
@@ -45,13 +47,43 @@ export function ArtPanel() {
     return () => window.removeEventListener('keydown', onKey)
   }, [zoom])
 
+  useEffect(() => {
+    if (!menu) return
+    const close = (): void => setMenu(null)
+    window.addEventListener('click', close)
+    return () => window.removeEventListener('click', close)
+  }, [menu])
+
+  const chooseArt = async (): Promise<void> => {
+    if (!albumKey) return
+    const url = await window.api.setArt(albumKey)
+    if (url) {
+      cache.set(albumKey, url)
+      setArt(url)
+    }
+  }
+
+  const removeArt = async (): Promise<void> => {
+    if (!albumKey) return
+    await window.api.clearArt(albumKey)
+    cache.delete(albumKey)
+    // re-resolve: embedded art (if any) survives a cache clear
+    const embedded = await window.api.getArt(track!.path, albumKey)
+    cache.set(albumKey, embedded)
+    setArt(embedded)
+  }
+
   if (!track) return null
   return (
     <>
       <div
         className={`art-panel ${art ? 'zoomable' : ''}`}
         onClick={() => art && setZoom(true)}
-        title={art ? 'Click to enlarge' : undefined}
+        onContextMenu={(e) => {
+          e.preventDefault()
+          setMenu({ x: e.clientX, y: e.clientY })
+        }}
+        title={art ? 'Click to enlarge · right-click for options' : 'Right-click to set art'}
       >
         {art ? (
           <img src={art} alt={track.album} draggable={false} />
@@ -59,6 +91,18 @@ export function ArtPanel() {
           <div className="art-empty">♫</div>
         )}
       </div>
+      {menu && (
+        <div className="context-menu" style={{ left: menu.x, top: menu.y }}>
+          <div className="menu-item" onClick={() => void chooseArt()}>
+            Set album art…
+          </div>
+          {art && (
+            <div className="menu-item" onClick={() => void removeArt()}>
+              Clear album art
+            </div>
+          )}
+        </div>
+      )}
       {zoom && art && (
         <div className="art-lightbox" onClick={() => setZoom(false)}>
           <img src={art} alt={track.album} draggable={false} />
