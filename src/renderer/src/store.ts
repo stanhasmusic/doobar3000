@@ -411,23 +411,16 @@ export const useStore = create<State>((set, get) => ({
     })
     window.api.onFfmpegProgress((pct) => set({ ffmpegProgress: pct }))
     window.api.onLufsProgress((p) => set({ lufsProgress: p.done >= p.total ? null : p }))
+    // Background analysis streams one update per track. Buffer them and flush in
+    // batches (see flushAnalysis) so a large library isn't rebuilt once per track.
     window.api.onLufsUpdate((u) => {
-      set({
-        library: get().library.map((t) =>
-          t.path === u.path ? { ...t, lufs: u.lufs, peakDb: u.peakDb } : t
-        )
-      })
-      if (u.path === get().currentPath) applyLeveling()
+      pendingLufs.set(u.path, { lufs: u.lufs, peakDb: u.peakDb })
+      scheduleAnalysisFlush()
     })
     window.api.onVibeProgress((p) => set({ vibeProgress: p.done >= p.total ? null : p }))
     window.api.onVibeUpdate((u) => {
-      set({
-        library: get().library.map((t) =>
-          t.path === u.path
-            ? { ...t, brightness: u.brightness ?? t.brightness, bpm: u.bpm ?? t.bpm }
-            : t
-        )
-      })
+      pendingVibe.set(u.path, { brightness: u.brightness, bpm: u.bpm })
+      scheduleAnalysisFlush()
     })
     if (ffmpeg.found) {
       if (library.some((t) => t.lufs === null)) void window.api.analyzeLoudness()
@@ -756,6 +749,41 @@ if ((import.meta as { env?: { DEV?: boolean } }).env?.DEV) {
 }
 
 let noticeTimer: ReturnType<typeof setTimeout> | undefined
+
+// Background analysis (loudness / vibe) emits one result per track. Applying each
+// one individually would rebuild the entire `library` array per track — O(N²) over
+// a full pass, plus a re-render each time. Instead we buffer results here and flush
+// them together on a short timer, so a 10k-track pass does a few hundred rebuilds
+// instead of 10k.
+const pendingLufs = new Map<string, { lufs: number; peakDb: number }>()
+const pendingVibe = new Map<string, { brightness: number | null; bpm: number | null }>()
+let analysisFlushTimer: ReturnType<typeof setTimeout> | undefined
+
+function scheduleAnalysisFlush(): void {
+  if (analysisFlushTimer) return
+  analysisFlushTimer = setTimeout(flushAnalysis, 250)
+}
+
+function flushAnalysis(): void {
+  analysisFlushTimer = undefined
+  if (!pendingLufs.size && !pendingVibe.size) return
+  const s = useStore.getState()
+  const reLevel = s.currentPath != null && pendingLufs.has(s.currentPath)
+  const library = s.library.map((t) => {
+    const l = pendingLufs.get(t.path)
+    const v = pendingVibe.get(t.path)
+    if (!l && !v) return t
+    return {
+      ...t,
+      ...(l ? { lufs: l.lufs, peakDb: l.peakDb } : {}),
+      ...(v ? { brightness: v.brightness ?? t.brightness, bpm: v.bpm ?? t.bpm } : {})
+    }
+  })
+  pendingLufs.clear()
+  pendingVibe.clear()
+  useStore.setState({ library })
+  if (reLevel) applyLeveling()
+}
 
 function applyLeveling(): void {
   const s = useStore.getState()

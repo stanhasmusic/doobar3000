@@ -36,11 +36,21 @@ function createWindow(): void {
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),
       contextIsolation: true,
-      sandbox: false,
+      sandbox: true,
       autoplayPolicy: 'no-user-gesture-required'
     }
   })
   win.setMenuBarVisibility(false)
+
+  // Security hardening: this app is a single fixed page. Deny any attempt to
+  // open a new window or navigate away from it — all real outbound links go
+  // through the allow-listed 'open-external' IPC. (Same-origin navigations are
+  // permitted so the dev server's hot-reload still works.)
+  win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+  win.webContents.on('will-navigate', (e, url) => {
+    const ownOrigin = process.env.ELECTRON_RENDERER_URL ?? 'file://'
+    if (!url.startsWith(ownOrigin)) e.preventDefault()
+  })
 
   if (process.env.DEBUG_LOG) {
     win.webContents.on('console-message', (_e, _l, msg) => console.log('[renderer]', msg))
@@ -294,6 +304,12 @@ app.whenReady().then(async () => {
     const filePath = decodeURIComponent(request.url.slice('media://'.length))
     if (process.env.DEBUG_LOG) {
       console.log('[media]', request.method, request.url.slice(0, 120), 'range:', request.headers.get('range'))
+    }
+    // Defense in depth: only ever serve recognised audio files. The renderer is
+    // trusted, but this keeps the protocol from being a general arbitrary-file
+    // read primitive if untrusted content ever ran in the renderer.
+    if (!(path.extname(filePath).toLowerCase() in MIME)) {
+      return new Response('unsupported media type', { status: 415 })
     }
     let size: number
     try {

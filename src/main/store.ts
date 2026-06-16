@@ -17,8 +17,17 @@ async function readJson<T>(file: string, fallback: T): Promise<T> {
 }
 
 async function writeJson(file: string, data: unknown): Promise<void> {
-  await fs.mkdir(dataDir(), { recursive: true })
-  await fs.writeFile(path.join(dataDir(), file), JSON.stringify(data))
+  const dir = dataDir()
+  await fs.mkdir(dir, { recursive: true })
+  const dest = path.join(dir, file)
+  // Atomic write: serialize to a temp file, then rename it over the target.
+  // rename is atomic on a single volume, so a crash (or a second concurrent
+  // write) can never leave a truncated library.json — a reader always sees the
+  // complete old contents or the complete new ones. The pid in the temp name
+  // keeps concurrent writers from sharing a scratch file.
+  const tmp = `${dest}.${process.pid}.tmp`
+  await fs.writeFile(tmp, JSON.stringify(data))
+  await fs.rename(tmp, dest)
 }
 
 export const getLibrary = async (): Promise<Track[]> => {
