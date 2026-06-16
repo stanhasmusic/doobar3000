@@ -24,6 +24,14 @@ export function Sidebar() {
   const [editName, setEditName] = useState('')
   const [dropTarget, setDropTarget] = useState<string | null>(null)
   const [pendingDelete, setPendingDelete] = useState<{ id: string; name: string } | null>(null)
+  // which sidebar sections are collapsed (local-only; defaults to all expanded)
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
+  const toggleSection = (key: string) =>
+    setCollapsed((prev) => {
+      const next = new Set(prev)
+      next.has(key) ? next.delete(key) : next.add(key)
+      return next
+    })
 
   const commitRename = () => {
     if (editingId && editName.trim()) renamePlaylist(editingId, editName.trim())
@@ -33,24 +41,35 @@ export function Sidebar() {
   return (
     <div className="sidebar">
       <div className="side-nav">
-      <div className="side-section">LIBRARY</div>
-      <div
-        className={`side-item ${view.type === 'library' ? 'active' : ''}`}
-        onClick={() => setView({ type: 'library' })}
-      >
-        <span className="side-icon">♫</span> All Music
+      <div className="side-section" onClick={() => toggleSection('library')}>
+        <span className={`side-caret ${collapsed.has('library') ? 'collapsed' : ''}`}>▾</span>
+        LIBRARY
       </div>
-      <div
-        className={`side-item ${view.type === 'duplicates' ? 'active' : ''}`}
-        onClick={() => setView({ type: 'duplicates' })}
-      >
-        <span className="side-icon">⧉</span> Duplicates
-      </div>
+      {!collapsed.has('library') && (
+        <>
+          <div
+            className={`side-item ${view.type === 'library' ? 'active' : ''}`}
+            onClick={() => setView({ type: 'library' })}
+          >
+            <span className="side-icon">♫</span> All Music
+          </div>
+          <div
+            className={`side-item ${view.type === 'duplicates' ? 'active' : ''}`}
+            onClick={() => setView({ type: 'duplicates' })}
+          >
+            <span className="side-icon">⧉</span> Duplicates
+          </div>
+        </>
+      )}
 
       {smart.length > 0 && (
         <>
-          <div className="side-section">SMART</div>
-          {smart.map((sp) => (
+          <div className="side-section" onClick={() => toggleSection('smart')}>
+            <span className={`side-caret ${collapsed.has('smart') ? 'collapsed' : ''}`}>▾</span>
+            SMART
+          </div>
+          {!collapsed.has('smart') &&
+            smart.map((sp) => (
             <div
               key={sp.id}
               className={`side-item ${
@@ -65,12 +84,20 @@ export function Sidebar() {
         </>
       )}
 
-      <div className="side-section">
+      <div className="side-section" onClick={() => toggleSection('playlists')}>
+        <span className={`side-caret ${collapsed.has('playlists') ? 'collapsed' : ''}`}>▾</span>
         PLAYLISTS
         <button
           className="btn-add"
           title="New playlist"
-          onClick={() => {
+          onClick={(e) => {
+            e.stopPropagation()
+            // make sure the new playlist is visible
+            setCollapsed((prev) => {
+              const next = new Set(prev)
+              next.delete('playlists')
+              return next
+            })
             const n = playlists.length + 1
             createPlaylist(`Playlist ${n}`)
           }}
@@ -78,7 +105,8 @@ export function Sidebar() {
           +
         </button>
       </div>
-      {playlists.map((p) => (
+      {!collapsed.has('playlists') &&
+        playlists.map((p) => (
         <div
           key={p.id}
           className={`side-item ${view.type === 'playlist' && view.id === p.id ? 'active' : ''} ${
