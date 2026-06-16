@@ -15,11 +15,14 @@ Electron + React + TypeScript.
   WMA and more via an optional one-click ffmpeg decoder pack (transparent transcode + cache).
 - 🔊 **LUFS auto-leveling** (EBU R128 / ReplayGain 2.0) with Track and Album modes.
 - 📊 **Live visualizers** — log-frequency spectrum analyzer + stereo VU meter, theme-aware.
-- 🏷️ **Auto-tagging** via AcoustID fingerprinting + MusicBrainz (bring your own free key).
-- 🖼️ **Automatic cover art** from the Cover Art Archive when none is embedded.
+- 🏷️ **Auto-tagging** via AcoustID fingerprinting + MusicBrainz (bring your own free key),
+  with one-click "apply this match to the whole album".
+- 🖼️ **Automatic cover art** from the Cover Art Archive when none is embedded — or set
+  your own from a file (right-click the art panel).
 - 🧠 **Smart playlists** auto-derived from your tags (Recently Added, per-genre, per-decade).
 - 🎨 **Themes** — Dark / Light / Midnight / Sepia presets plus a custom accent color.
-- 🔁 Shuffle + repeat, customizable & reorderable columns, duplicate detection, waveform seek.
+- 🔁 Shuffle + repeat, multi-select (Shift / Ctrl-click), customizable & reorderable
+  columns, duplicate detection, waveform seek.
 
 ## Themes
 
@@ -66,17 +69,27 @@ The sections below are detailed build notes — the project is developed in phas
   chosen set and order persist in settings. Level shows the auto-leveler's gain per track
   (`—` when leveling is off).
 - **Auto-tagging (AcoustID + MusicBrainz)**: right-click a track → *Identify (auto-tag)*.
-  Fingerprints the file with `fpcalc`, looks it up on AcoustID, and offers ranked tag
-  candidates; *Apply* rewrites the file's tags (ffmpeg remux, audio untouched) and rescans
-  it. Needs a free AcoustID application key (paste it in ⚙) and the one-click fingerprinter
-  download (~1.5 MB, in ⚙).
-- **Automatic cover art**: when a track has no embedded art, the art panel fetches it from
-  the Cover Art Archive (via a MusicBrainz release-group match) and caches it on disk.
+  Fingerprints the file with `fpcalc`, looks it up on AcoustID, and offers up to 20 ranked
+  tag candidates (full albums *and* compilations rank equally — your track's "right" album
+  is often a comp like *Legend*); *Apply* rewrites the file's tags (ffmpeg remux, audio
+  untouched) and rescans it. If other tracks share the album, a popup offers to push the
+  album / album-artist / year to **all of them at once** (each keeps its own title and track
+  number). Needs a free AcoustID application key (paste it in ⚙) and the one-click
+  fingerprinter download (~1.5 MB, in ⚙).
+- **Cover art**: when a track has no embedded art, the art panel fetches it from the Cover
+  Art Archive (via an *exact-title* MusicBrainz release-group match, after stripping
+  edition/disc qualifiers like "[Disc 1]" / "Remastered") and caches it on disk. Or
+  **set your own**: right-click the art panel → *Set album art…* (or *Clear*). Manual art is
+  cached by album, so one pick covers every track on the album.
+- **Multi-select**: Shift-click to select a range, Ctrl/Cmd-click to toggle individual
+  tracks. Remove and Add-to-Playlist then act on the whole selection.
 - **Duplicate detection**: the "Duplicates" sidebar entry groups tracks with the same
   title+artist and near-identical length, showing each copy's path / format / bitrate with
   per-row Play and Remove.
 - **Context menu**: Play · Identify · Add to Playlist · Search on Spotify · Search on
-  Apple Music · Remove from Playlist (in playlists) · Remove from library.
+  Apple Music · Remove from Playlist (in playlists) · Remove from library. Add-to-Playlist
+  and Remove operate on the whole multi-selection (right-clicking inside a selection keeps
+  it; right-clicking elsewhere narrows to that row).
 - **Playback modes**: shuffle and repeat (off → all → one) toggles in the transport,
   persisted. Shuffle keeps the current track playing and randomizes the rest; repeat-one
   replays the current track on end; repeat-all wraps the queue (reshuffling for variety).
@@ -151,10 +164,14 @@ prints media-protocol requests and renderer console to the terminal.
   `bin/` for the downloaded `ffmpeg.exe` / `fpcalc.exe`.
   (Chose JSON over SQLite to avoid native-module rebuild pain on Windows; fine for 10k+ tracks.)
 - **Auto-tagging** (`src/main/acoustid.ts`): `fpcalc -json` fingerprint → AcoustID lookup →
-  ranked candidates; *Apply* writes tags via ffmpeg `-c copy` remux (keeps a `.bak` until the
-  swap succeeds). **Cover art** (`src/main/art.ts`): MusicBrainz release-group search →
-  Cover Art Archive, throttled to 1 req/s, disk-cached. External links (`shell.openExternal`)
-  are allow-listed to Spotify/Apple Music/AcoustID HTTPS hosts.
+  ranked candidates; *Apply* writes tags via a shared `remuxWithMeta` core (ffmpeg `-c copy`,
+  keeps a `.bak` until the swap succeeds). `applyAlbumTags` reuses that core to write only
+  album-level fields across many files. **Cover art** (`src/main/art.ts`): `cleanAlbum`
+  strips edition/disc qualifiers + `lucene` escapes query specials → MusicBrainz
+  release-group search (accepts only an exact normalized title match, walks the top few for a
+  Cover Art Archive image) → disk cache, throttled to 1 req/s; `setArt`/`clearArt` back the
+  manual override. External links (`shell.openExternal`) are allow-listed to
+  Spotify/Apple Music/AcoustID HTTPS hosts.
 
 ## Architecture notes / gotchas
 
@@ -187,6 +204,12 @@ prints media-protocol requests and renderer console to the terminal.
 - **MusicBrainz etiquette**: hard 1 req/sec limit and a descriptive `User-Agent` are
   required or it returns 503; Cover Art Archive 404s (no art for that release) are normal
   and negative-cached for the session.
+- **Auto-art/identify have a data-gap ceiling**: a release-group title that's a common word
+  (e.g. "Legend") or an artist tag that differs from MusicBrainz's credit (tag "Bob Marley"
+  vs MB "Bob Marley & The Wailers") can mean the right release simply doesn't surface — not a
+  code bug. The fixes (exact-title matching for art, equal album/comp ranking for identify)
+  raise the hit rate but can't conjure missing links; the manual *Set album art* override is
+  the deliberate escape hatch.
 - **New nullable `Track` fields must be backfilled in `getLibrary`** (`src/main/store.ts`):
   tracks scanned by an older version lack the new key, which reads as `undefined` at
   runtime and slips past `=== null` "needs analysis" filters (this bit Phase 4.5's
@@ -277,6 +300,17 @@ prints media-protocol requests and renderer console to the terminal.
   Remaining: possibly resizable spectrum/VU meters.
 
 ## Where we left off
+
+**Library UX + tagging pass — DONE & user-tested 2026-06-15** (two commits). Triggered by
+a Bob Marley *Legend* track showing no auto art. Shipped: (1) **better cover-art lookup** —
+strip edition/disc qualifiers + escape Lucene specials, match on an *exact* release-group
+title (no more confidently-wrong covers); (2) **manual art override** — right-click the art
+panel to Set/Clear, cached by album so one pick covers the album; (3) **Identify ranking
+fix** — albums and compilations rank equally (comps were buried) and 20 candidates show
+instead of 6; (4) **multi-select** — Shift/Ctrl-click, with batch Remove / Add-to-Playlist;
+(5) **apply-to-album** — after an Identify match, a popup offers to push album/artist/year
+to the rest of the album. *Legend* specifically still misses **auto** art (genuine
+MusicBrainz data gap — see the gotcha above) but is now reachable via Identify + manual art.
 
 Phase 3 complete and self-verified via the dev harness (column picker, drag-reorder,
 Duplicates view, Identify dialog, AcoustID/fpcalc settings, fpcalc download). Awaiting
