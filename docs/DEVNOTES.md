@@ -277,9 +277,19 @@ in the store (newest-first, deduped by url, cap 30, pushed in `playStation`) sho
 SomaFM seeds so the tab is never empty. **NOTE for D4:** `recentStations` is session-only (resets on
 app restart) — D4 makes it durable in `radio.json` and adds star/favorite.
 
-**Next up: Phase D4 — Favorites.** New `radio.json` sibling via the existing `readJson`/`writeJson`
-(`src/main/store.ts`) + `get/saveRadioFavorites` IPC; star action on a search/known row; persist
-`recentStations`-style data so Known Stations survives restart.
+**Phase D4 — Favorites: DONE & user-tested 2026-06-17 (commit `86c086b`)** — star a station and it
+survives restart. New `radio.json` sibling holds `{ favorites, recent }` via the existing atomic
+`readJson`/`writeJson` (`src/main/store.ts`), exposed through `get/save-radio` IPC →
+`window.api.getRadio`/`saveRadio`. The store gained `favorites` (loaded in `init` alongside `recent`),
+a `toggleFavorite` action (dedupe by url), and a debounced `persistRadio()`; `playStation` now
+persists so the **Recent** play-history (session-only in D3) is durable too. `RadioDialog` went from
+two tabs to **three — Search / Favorites / Recent** — with a ★/☆ star toggle on every row
+(`.station-star`, accent when on); the SomaFM seeds are now only the Recent empty-state fallback.
+
+**Phase D (internet radio) is complete.** Next up: the documented viz-polish **backlog** (Stan,
+2026-06-16) — adaptive nerd-axis label density, selectable viz FPS cap, and VU nerd-mode label
+padding (see the backlog notes under the Nerd Mode + Internet Radio section). No new feature phase is
+scheduled beyond that.
 
 **Library UX + tagging pass — DONE & user-tested 2026-06-15** (two commits). Triggered by
 a Bob Marley *Legend* track showing no auto art. Shipped: (1) **better cover-art lookup** —
