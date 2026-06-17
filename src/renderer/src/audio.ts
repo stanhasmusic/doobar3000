@@ -64,6 +64,26 @@ export const audio = {
   setLevelGainDb(db: number): void {
     levelGain.gain.value = Math.pow(10, db / 20)
   },
+  // Route the whole graph to a chosen output device. NOTE: this must be
+  // AudioContext.setSinkId, NOT the <audio> element's — the element's output was
+  // taken over by ctx.destination, so its sink id is ignored. ''/'default' = the
+  // system default. Chromium 110+ (we're on Electron 35 ≈ Chromium 134).
+  async setSinkId(deviceId: string): Promise<boolean> {
+    const c = ctx as AudioContext & { setSinkId?: (id: string) => Promise<void> }
+    if (typeof c.setSinkId !== 'function') return false
+    try {
+      await c.setSinkId(deviceId || '')
+      return true
+    } catch (e) {
+      console.warn('setSinkId failed', e) // device gone → caller falls back to default
+      return false
+    }
+  },
+  /** the mix (output) format the graph runs at — WASAPI shared decides this */
+  mixFormat: (): { sampleRate: number; channels: number } => ({
+    sampleRate: ctx.sampleRate,
+    channels: ctx.destination.channelCount
+  }),
   currentTime: () => el.currentTime,
   duration: () => (Number.isFinite(el.duration) ? el.duration : 0),
   context: ctx,

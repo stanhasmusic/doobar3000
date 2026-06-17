@@ -12,6 +12,7 @@ export interface Track {
   // tech fields (Phase 2+; older library entries may lack them until rescan)
   bitrate: number | null
   sampleRate: number | null
+  bitsPerSample: number | null
   codec: string | null
   fileType: string | null
   // EBU R128 loudness analysis (null = not yet analyzed)
@@ -79,6 +80,9 @@ export interface Settings {
   /** "nerd mode" — layers extra technical readouts onto the existing UI and
    *  reveals advanced settings nodes. A single annotation flag, not a second UI. */
   nerdMode: boolean
+  /** chosen audio output device (mediaDevices deviceId; '' = system default).
+   *  Device ids rotate with hardware changes, so a stale id falls back to default. */
+  outputDeviceId: string
 }
 
 /** one tag proposal from an AcoustID/MusicBrainz lookup */

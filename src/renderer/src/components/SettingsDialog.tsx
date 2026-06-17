@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { LevelMode, Theme } from '../../../shared/types'
-import { useStore } from '../store'
+import { audio } from '../audio'
+import { formatRate, trackByPath, useStore } from '../store'
 
 const MODES: { value: LevelMode; label: string }[] = [
   { value: 'off', label: 'Off' },
@@ -30,7 +31,14 @@ interface TreeNode {
 const TREE: TreeNode[] = [
   { id: 'general', label: 'General' },
   { id: 'display', label: 'Display', subs: [{ id: 'colors', label: 'Colors' }] },
-  { id: 'playback', label: 'Playback', subs: [{ id: 'leveling', label: 'Leveling' }] },
+  {
+    id: 'playback',
+    label: 'Playback',
+    subs: [
+      { id: 'output', label: 'Output' },
+      { id: 'leveling', label: 'Leveling' }
+    ]
+  },
   { id: 'library', label: 'Library & Tagging' },
   { id: 'advanced', label: 'Advanced', nerd: true }
 ]
@@ -125,19 +133,17 @@ function NodeContent({
     case 'display':
       return <ColorsPanel />
     case 'playback':
-      return <LevelingPanel />
+      return subId === 'leveling' ? <LevelingPanel /> : <OutputPanel />
     case 'library':
       return <LibraryPanel />
     case 'advanced':
       return (
         <p className="set-hint">
-          Diagnostic and output details will appear here as Nerd Mode features land
-          (device readout, format info, advanced visualizers).
+          Advanced diagnostics will appear here as Nerd Mode features land (the expandable
+          visualizer overlay is next). Output and format details live under Playback → Output.
         </p>
       )
   }
-  // `subId` is reserved for nodes that gain a second panel in a later phase.
-  void subId
 }
 
 function GeneralPanel({ onClose }: { onClose: () => void }): React.ReactNode {
@@ -225,6 +231,96 @@ function ColorsPanel(): React.ReactNode {
           ? 'Custom uses the dark base with your accent color — pick from the wheel or type a hex code.'
           : 'Light, dark, and a couple of modern/classic palettes.'}
       </div>
+    </>
+  )
+}
+
+function OutputPanel(): React.ReactNode {
+  const outputDeviceId = useStore((s) => s.outputDeviceId)
+  const nerdMode = useStore((s) => s.nerdMode)
+  const currentPath = useStore((s) => s.currentPath)
+  const library = useStore((s) => s.library)
+  const { setOutputDevice } = useStore.getState()
+  const [devices, setDevices] = useState<MediaDeviceInfo[]>([])
+
+  // Enumerate output devices and keep the list fresh as hardware comes/goes.
+  // (Labels can be blank until the app has media permission — we fall back to a
+  // generic name so the picker is still usable.)
+  useEffect(() => {
+    const load = (): void => {
+      void navigator.mediaDevices
+        .enumerateDevices()
+        .then((d) => setDevices(d.filter((x) => x.kind === 'audiooutput')))
+    }
+    load()
+    navigator.mediaDevices.addEventListener('devicechange', load)
+    return () => navigator.mediaDevices.removeEventListener('devicechange', load)
+  }, [])
+
+  const track = trackByPath(library, currentPath)
+  const mix = audio.mixFormat()
+  const resampled = track?.sampleRate != null && track.sampleRate !== mix.sampleRate
+  const srcRate = track?.sampleRate ? formatRate(track.sampleRate) : '—'
+  const srcDesc = track
+    ? [
+        (track.codec || track.fileType || '').toUpperCase() || '—',
+        track.sampleRate ? `${srcRate}${track.bitsPerSample ? `/${track.bitsPerSample}` : ''}` : '',
+        track.bitrate ? `${track.bitrate} kbps` : ''
+      ]
+        .filter(Boolean)
+        .join(' · ')
+    : 'nothing playing'
+
+  return (
+    <>
+      <div className="set-title">Output device</div>
+      <select
+        className="set-input"
+        value={outputDeviceId}
+        onChange={(e) => void setOutputDevice(e.target.value)}
+      >
+        <option value="">System default</option>
+        {devices
+          .filter((d) => d.deviceId && d.deviceId !== 'default')
+          .map((d, i) => (
+            <option key={d.deviceId} value={d.deviceId}>
+              {d.label || `Output ${i + 1}`}
+            </option>
+          ))}
+      </select>
+      <div className="set-hint">
+        Routes playback (and the visualizers) to this device. Output is{' '}
+        <strong>WASAPI (Shared)</strong> — exclusive / bit-perfect output needs a native audio
+        engine and isn&apos;t supported.
+      </div>
+
+      {nerdMode && (
+        <>
+          <div className="set-title">Signal path</div>
+          <div className="nerd-readout">
+            <div>
+              <span>Source</span>
+              <span>{srcDesc}</span>
+            </div>
+            <div>
+              <span>Mix</span>
+              <span>
+                {formatRate(mix.sampleRate)} · {mix.channels} ch · WASAPI shared
+              </span>
+            </div>
+            <div>
+              <span>Resampling</span>
+              <span>
+                {resampled
+                  ? `yes — ${srcRate} → ${formatRate(mix.sampleRate)}`
+                  : track?.sampleRate
+                    ? 'no (source matches mix)'
+                    : '—'}
+              </span>
+            </div>
+          </div>
+        </>
+      )}
     </>
   )
 }

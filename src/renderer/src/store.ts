@@ -198,6 +198,8 @@ interface State {
   seenWelcome: boolean
   /** "nerd mode" — extra technical readouts + advanced settings nodes */
   nerdMode: boolean
+  /** chosen audio output device id ('' = system default) */
+  outputDeviceId: string
   ffmpeg: FfmpegStatus | null
   ffmpegProgress: number | null
   lufsProgress: ScanProgress | null
@@ -221,6 +223,7 @@ interface State {
   setTheme: (t: Theme) => void
   setAccentColor: (c: string) => void
   setNerdMode: (on: boolean) => void
+  setOutputDevice: (deviceId: string) => Promise<void>
   dismissWelcome: () => void
   replayWelcome: () => void
   removeFromLibrary: (paths: string[]) => Promise<void>
@@ -269,7 +272,8 @@ function persistSettings(): void {
     theme: s.theme,
     accentColor: s.accentColor,
     seenWelcome: s.seenWelcome,
-    nerdMode: s.nerdMode
+    nerdMode: s.nerdMode,
+    outputDeviceId: s.outputDeviceId
   })
 }
 
@@ -363,6 +367,7 @@ export const useStore = create<State>((set, get) => ({
   accentColor: '#e0556e',
   seenWelcome: true, // assume seen until init loads the real setting (avoids a flash)
   nerdMode: false,
+  outputDeviceId: '',
   ffmpeg: null,
   ffmpegProgress: null,
   lufsProgress: null,
@@ -396,10 +401,22 @@ export const useStore = create<State>((set, get) => ({
       accentColor: settings.accentColor || '#e0556e',
       seenWelcome: settings.seenWelcome ?? false,
       nerdMode: settings.nerdMode ?? false,
+      outputDeviceId: settings.outputDeviceId ?? '',
       ffmpeg,
       fpcalcFound
     })
     applyTheme(settings.theme ?? 'dark', settings.accentColor || '#e0556e')
+    // Re-route to the saved output device. If it's gone (ids rotate with hardware
+    // changes), setSinkId fails → silently fall back to the system default and
+    // forget the stale id so the picker shows "Default" rather than a dead entry.
+    if (settings.outputDeviceId) {
+      void audio.setSinkId(settings.outputDeviceId).then((ok) => {
+        if (!ok) {
+          set({ outputDeviceId: '' })
+          persistSettings()
+        }
+      })
+    }
     window.addEventListener('keydown', (e) => {
       if (!(e.ctrlKey || e.metaKey)) return
       const tag = (e.target as HTMLElement | null)?.tagName
@@ -509,6 +526,18 @@ export const useStore = create<State>((set, get) => ({
   setNerdMode: (nerdMode) => {
     set({ nerdMode })
     persistSettings()
+  },
+
+  setOutputDevice: async (deviceId) => {
+    const ok = await audio.setSinkId(deviceId)
+    // if the pick failed, the graph is still on whatever it was; only persist a
+    // selection that actually took (or '' for the always-valid system default)
+    if (ok || !deviceId) {
+      set({ outputDeviceId: ok ? deviceId : '' })
+      persistSettings()
+    } else {
+      get().showNotice('Could not switch to that output device.')
+    }
   },
 
   dismissWelcome: () => {
@@ -929,6 +958,28 @@ export function trackByPath(library: Track[], path: string | null): Track | unde
 
 export function formatDb(db: number): string {
   return `${db >= 0 ? '+' : '−'}${Math.abs(db).toFixed(1)} dB`
+}
+
+// "44100" → "44.1k", "48000" → "48k" — compact sample-rate label for nerd readouts
+export function formatRate(hz: number): string {
+  const k = hz / 1000
+  return `${Number.isInteger(k) ? k : k.toFixed(1)}k`
+}
+
+// One-line source→output format summary for the nerd format chip, e.g.
+// "FLAC 44.1/16 → 48k shared" (arrow only when the mix resamples the source).
+export function formatChip(track: Track | undefined): string | null {
+  if (!track) return null
+  const codec = (track.codec || track.fileType || '').toUpperCase()
+  const src: string[] = []
+  if (codec) src.push(codec)
+  if (track.sampleRate) {
+    src.push(track.bitsPerSample ? `${formatRate(track.sampleRate)}/${track.bitsPerSample}` : formatRate(track.sampleRate))
+  }
+  if (!src.length) return null
+  const mix = audio.mixFormat()
+  const resampled = track.sampleRate != null && track.sampleRate !== mix.sampleRate
+  return `${src.join(' ')} ${resampled ? '→' : '·'} ${formatRate(mix.sampleRate)} shared`
 }
 
 export function formatTime(s: number): string {

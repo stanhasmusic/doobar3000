@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { TopbarWidget } from '../../../shared/types'
-import { formatTime, trackByPath, useStore } from '../store'
+import { formatChip, formatTime, trackByPath, useStore } from '../store'
 import { LogoMark } from './LogoMark'
 import { SettingsMenu } from './SettingsMenu'
 import { Spectrum, VuMeter } from './Visualizers'
@@ -48,6 +48,7 @@ export function TopBar() {
   const shuffle = useStore((s) => s.shuffle)
   const repeat = useStore((s) => s.repeat)
   const layout = useStore((s) => s.topbarLayout)
+  const nerdMode = useStore((s) => s.nerdMode)
   const { togglePlay, next, prev, setVolume, toggleShuffle, cycleRepeat } = useStore.getState()
 
   const [arranging, setArranging] = useState(false)
@@ -126,6 +127,11 @@ export function TopBar() {
             </div>
             <div className="np-time">
               {formatTime(position)} / {formatTime(track.duration)}
+              {nerdMode && formatChip(track) && (
+                <span className="np-format" title="source format → output mix (WASAPI shared)">
+                  {formatChip(track)}
+                </span>
+              )}
             </div>
           </>
         ) : (

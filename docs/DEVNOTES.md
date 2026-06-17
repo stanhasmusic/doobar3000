@@ -283,7 +283,33 @@ render, re-homed controls work, nerd toggle reveals/hides Advanced.
   `Library & Tagging` [existing decoder pack, AcoustID key, fpcalc] · `Advanced` [nerd].
 - **No radio node** — discoverability comes from the sidebar entry.
 
+**Phase A and B are both done; next up is Phase C (visualizer overlay).** User-confirmed
+2026-06-16 that switching to a specific output device reroutes audio *and* the visualizers
+keep working (the `setSinkId`-on-the-AudioContext path holds the whole graph together).
+
 ### Phase B — Nerd mode core (depends on A)
+
+**DONE & self-verified 2026-06-16 (harness screenshots) — working.** All three pieces
+landed and gate on the single `nerdMode` flag:
+- **Viz annotations** (`Visualizers.tsx`): the spectrum gains a log Hz axis (100 / 1k / 10k)
+  and the VU a dB scale (−24/−12/−6/0) plus a live peak-hold readout (louder of L/R, `−∞`
+  at silence). Both reserve a thin strip and only draw when the widget is wide enough
+  (spectrum ≥ 200px, VU ≥ 90px). `useCanvasLoop` was refactored to call the draw closure
+  through a ref so it sees the live `nerdMode` without restarting the rAF loop.
+- **Output panel** (Playback → Output sub-tab, `SettingsDialog.tsx`): device picker for
+  everyone (`navigator.mediaDevices` enumerate + `devicechange` listener; `''` = System
+  default), driven by **`audio.setSinkId` on the AudioContext** (not the element). Honest
+  `WASAPI (Shared)` note. Nerd-only **Signal path** readout: Source (codec · rate/bits ·
+  kbps), Mix (`ctx.sampleRate` · channels · WASAPI shared), and a Resampling line. Chosen
+  device persists as `outputDeviceId`; on launch a stale id silently falls back to default.
+- **Format chip** (`TopBar.tsx`, nerd-only): `formatChip()` renders e.g. `ALAC 44.1k → 48k
+  shared` inline after the now-playing time (arrow only when the mix resamples; bit depth
+  shown when known). New nullable `Track.bitsPerSample` (scanner reads it from
+  music-metadata; backfilled in `getLibrary`) feeds the `/16` part — legacy tracks omit it
+  until rescan, which the chip handles gracefully.
+- New `Settings.outputDeviceId` (main `DEFAULT_SETTINGS` + renderer store/persist).
+
+Original design notes for the phase:
 
 - Top-bar viz **annotations**: frequency-axis labels on the spectrum, dB scale + live
   peak/RMS readout on the VU. Shown only when the widget is wide enough to stay legible.

@@ -1,9 +1,14 @@
 import { useEffect, useRef } from 'react'
 import { audio } from '../audio'
-import { vizColors } from '../store'
+import { useStore, vizColors } from '../store'
 
+// The draw callback is held in a ref and refreshed every render, so the rAF loop
+// (started once) always calls the latest closure — letting `draw` read live props
+// like nerd mode without restarting the loop.
 function useCanvasLoop(draw: (g: CanvasRenderingContext2D, w: number, h: number) => void) {
   const ref = useRef<HTMLCanvasElement>(null)
+  const drawRef = useRef(draw)
+  drawRef.current = draw
   useEffect(() => {
     let raf = 0
     const loop = () => {
@@ -20,28 +25,43 @@ function useCanvasLoop(draw: (g: CanvasRenderingContext2D, w: number, h: number)
       const g = canvas.getContext('2d')!
       g.setTransform(dpr, 0, 0, dpr, 0, 0)
       g.clearRect(0, 0, w, h)
-      draw(g, w, h)
+      drawRef.current(g, w, h)
     }
     raf = requestAnimationFrame(loop)
     return () => cancelAnimationFrame(raf)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
   return ref
 }
+
+// log position (0..1) of a frequency within the spectrum's FREQ_MIN..FREQ_MAX span
+const freqFrac = (f: number): number =>
+  Math.log(f / FREQ_MIN) / Math.log(FREQ_MAX / FREQ_MIN)
 
 const BARS = 48
 const FREQ_MIN = 50
 const FREQ_MAX = 16000
 
+// nerd-mode frequency markers (Hz) labelled along the spectrum's bottom edge
+const FREQ_TICKS: { f: number; label: string }[] = [
+  { f: 100, label: '100' },
+  { f: 1000, label: '1k' },
+  { f: 10000, label: '10k' }
+]
+
 export function Spectrum() {
   const analyser = audio.spectrumAnalyser
   const data = useRef(new Uint8Array(analyser.frequencyBinCount))
+  const nerdMode = useStore((s) => s.nerdMode)
 
   const ref = useCanvasLoop((g, w, h) => {
     analyser.getByteFrequencyData(data.current)
+    // reserve a thin bottom strip for the Hz axis when nerd mode is on and the
+    // widget is wide enough for the labels to stay legible
+    const axis = nerdMode && w >= 200 ? 11 : 0
+    const plotH = h - axis
     const binHz = audio.context.sampleRate / 2 / analyser.frequencyBinCount
     const barW = w / BARS
-    const grad = g.createLinearGradient(0, h, 0, 0)
+    const grad = g.createLinearGradient(0, plotH, 0, 0)
     grad.addColorStop(0, vizColors.accentDark)
     grad.addColorStop(0.6, vizColors.accent)
     grad.addColorStop(1, vizColors.accentLight)
@@ -55,8 +75,19 @@ export function Spectrum() {
       let sum = 0
       for (let b = b0; b < b1; b++) sum += data.current[b] ?? 0
       const v = Math.pow(sum / (b1 - b0) / 255, 0.8) // mild lift for low levels
-      const bh = Math.max(1.5, v * h)
-      g.fillRect(i * barW + 1, h - bh, barW - 2, bh)
+      const bh = Math.max(1.5, v * plotH)
+      g.fillRect(i * barW + 1, plotH - bh, barW - 2, bh)
+    }
+    if (axis) {
+      g.font = '9px system-ui, sans-serif'
+      g.textBaseline = 'bottom'
+      g.fillStyle = vizColors.faint
+      for (const { f, label } of FREQ_TICKS) {
+        const x = freqFrac(f) * w
+        g.fillRect(x, plotH - 2, 1, 3) // a small tick into the plot
+        g.textAlign = f === FREQ_TICKS[0].f ? 'left' : f === 10000 ? 'right' : 'center'
+        g.fillText(label, Math.max(1, Math.min(w - 1, x)), h)
+      }
     }
   })
 
@@ -64,14 +95,21 @@ export function Spectrum() {
 }
 
 const VU_FLOOR = -48 // dB shown at the left edge
+const VU_TICKS = [-24, -12, -6, 0] // nerd-mode dB scale marks
+const vuFrac = (db: number): number => Math.max(0, Math.min(1, (db - VU_FLOOR) / -VU_FLOOR))
 
 export function VuMeter() {
   const buffers = useRef(audio.vuAnalysers.map((a) => new Float32Array(a.fftSize)))
   const peaks = useRef([VU_FLOOR, VU_FLOOR])
+  const nerdMode = useStore((s) => s.nerdMode)
 
   const ref = useCanvasLoop((g, w, h) => {
+    const axis = nerdMode && w >= 90 ? 10 : 0 // bottom strip for the dB scale
+    const head = nerdMode && w >= 90 ? 11 : 0 // top strip for the live peak readout
     const barH = 7
-    const gap = (h - barH * 2) / 3
+    const span = h - axis - head
+    const gap = (span - barH * 2) / 3
+    let peakMax = VU_FLOOR
     audio.vuAnalysers.forEach((analyser, ch) => {
       analyser.getFloatTimeDomainData(buffers.current[ch])
       let sum = 0
@@ -80,10 +118,11 @@ export function VuMeter() {
       const db = rms > 0 ? 20 * Math.log10(rms) : VU_FLOOR
       // peak hold with steady fall
       peaks.current[ch] = Math.max(db, peaks.current[ch] - 0.45)
+      peakMax = Math.max(peakMax, peaks.current[ch])
 
-      const frac = Math.max(0, Math.min(1, (db - VU_FLOOR) / -VU_FLOOR))
-      const peakFrac = Math.max(0, Math.min(1, (peaks.current[ch] - VU_FLOOR) / -VU_FLOOR))
-      const y = gap + ch * (barH + gap)
+      const frac = vuFrac(db)
+      const peakFrac = vuFrac(peaks.current[ch])
+      const y = head + gap + ch * (barH + gap)
 
       g.fillStyle = vizColors.track
       g.fillRect(0, y, w, barH)
@@ -100,6 +139,22 @@ export function VuMeter() {
         g.fillRect(w * peakFrac - 1, y, 2, barH)
       }
     })
+    if (axis || head) {
+      g.font = '9px system-ui, sans-serif'
+      g.fillStyle = vizColors.faint
+      g.textBaseline = 'bottom'
+      for (const db of VU_TICKS) {
+        const x = vuFrac(db) * w
+        g.fillRect(Math.min(x, w - 1), head + span, 1, 3)
+        g.textAlign = db === 0 ? 'right' : 'center'
+        g.fillText(String(db), Math.min(x, w - 1), h)
+      }
+      // live peak readout (louder of L/R), top-right
+      g.textBaseline = 'top'
+      g.textAlign = 'right'
+      g.fillStyle = peakMax > -1 ? '#ff5c5c' : vizColors.text
+      g.fillText(`${peakMax <= VU_FLOOR ? '−∞' : peakMax.toFixed(1)} dB`, w, 0)
+    }
   })
 
   return <canvas ref={ref} className="vu-meter" title="VU (L/R)" />

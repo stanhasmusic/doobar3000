@@ -40,6 +40,7 @@ export const getLibrary = async (): Promise<Track[]> => {
     t.peakDb ??= null
     t.brightness ??= null
     t.bpm ??= null
+    t.bitsPerSample ??= null
   }
   return tracks
 }
@@ -61,7 +62,8 @@ const DEFAULT_SETTINGS: Settings = {
   theme: 'dark',
   accentColor: '#e0556e',
   seenWelcome: false,
-  nerdMode: false
+  nerdMode: false,
+  outputDeviceId: ''
 }
 export const getSettings = async (): Promise<Settings> => ({
   ...DEFAULT_SETTINGS,

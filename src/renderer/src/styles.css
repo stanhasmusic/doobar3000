@@ -480,6 +480,47 @@ body {
   letter-spacing: 0.06em;
 }
 
+/* nerd-mode source→output format chip, sits inline after the time readout */
+.np-format {
+  margin-left: 8px;
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+/* nerd-mode key/value readout (Output panel signal path) */
+.nerd-readout {
+  margin-top: 8px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.nerd-readout > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 5px 0;
+  border-bottom: 1px solid var(--border);
+}
+.nerd-readout > div:last-child {
+  border-bottom: none;
+}
+.nerd-readout span:first-child {
+  color: var(--text-faint);
+  text-transform: uppercase;
+  font-size: 10px;
+  letter-spacing: 0.07em;
+  align-self: center;
+}
+.nerd-readout span:last-child {
+  color: var(--text);
+  text-align: right;
+}
+
 .viz {
   flex: 1;
   display: flex;

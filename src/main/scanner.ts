@@ -65,6 +65,7 @@ export async function scanPaths(
         addedAt: Date.now(),
         bitrate: meta.format.bitrate ? Math.round(meta.format.bitrate / 1000) : null,
         sampleRate: meta.format.sampleRate ?? null,
+        bitsPerSample: meta.format.bitsPerSample ?? null,
         codec: meta.format.codec ?? null,
         fileType: path.extname(file).slice(1).toLowerCase() || null,
         lufs: null,
