@@ -140,9 +140,12 @@ interface State {
   /** current-song title parsed from the station's ICY metadata (Phase D2;
    *  null until the first StreamTitle arrives — falls back to the station name) */
   stationTitle: string | null
-  /** stations played this session, most-recent first — populates the Radio
-   *  dialog's "Known Stations" tab (Phase D3; D4 persists these as favorites) */
+  /** stations played, most-recent first — the Radio dialog's "Recent" tab.
+   *  Persisted to radio.json (Phase D4), so it survives restart. */
   recentStations: Station[]
+  /** explicitly-starred stations — the Radio dialog's "Favorites" tab.
+   *  Persisted to radio.json (Phase D4). */
+  favorites: Station[]
   playing: boolean
   position: number
   volume: number
@@ -221,6 +224,8 @@ interface State {
   playStation: (station: Station) => void
   /** stop radio playback entirely (stop = just stop; no queue auto-resume) */
   stopStation: () => void
+  /** add/remove a station from the persisted favorites (Phase D4) */
+  toggleFavorite: (station: Station) => void
   togglePlay: () => void
   next: () => void
   prev: () => void
@@ -257,6 +262,17 @@ function persistSettings(): void {
     vizScope: s.vizScope,
     vizPanelWidth: s.vizPanelWidth
   })
+}
+
+// Radio favorites + play-history persist to radio.json. Debounced like settings
+// so a burst of changes (e.g. starting several stations) writes once.
+let saveRadioTimer: ReturnType<typeof setTimeout> | undefined
+function persistRadio(): void {
+  clearTimeout(saveRadioTimer)
+  saveRadioTimer = setTimeout(() => {
+    const s = useStore.getState()
+    void window.api.saveRadio({ favorites: s.favorites, recent: s.recentStations })
+  }, 400)
 }
 
 // Snapshot-based undo/redo for library + playlist edits. Both arrays are always
@@ -337,6 +353,7 @@ export const useStore = create<State>((set, get) => ({
   currentStation: null,
   stationTitle: null,
   recentStations: [],
+  favorites: [],
   playing: false,
   position: 0,
   volume: 0.8,
@@ -368,12 +385,13 @@ export const useStore = create<State>((set, get) => ({
   canRedo: false,
 
   init: async () => {
-    const [library, playlists, settings, ffmpeg, fpcalcFound] = await Promise.all([
+    const [library, playlists, settings, ffmpeg, fpcalcFound, radio] = await Promise.all([
       window.api.getLibrary(),
       window.api.getPlaylists(),
       window.api.getSettings(),
       window.api.ffmpegStatus(),
-      window.api.fpcalcStatus()
+      window.api.fpcalcStatus(),
+      window.api.getRadio()
     ])
     audio.setVolume(settings.volume)
     set({
@@ -395,7 +413,9 @@ export const useStore = create<State>((set, get) => ({
       vizScope: settings.vizScope ?? 'spectrum',
       vizPanelWidth: settings.vizPanelWidth || 360,
       ffmpeg,
-      fpcalcFound
+      fpcalcFound,
+      favorites: radio.favorites,
+      recentStations: radio.recent
     })
     applyTheme(settings.theme ?? 'dark', settings.accentColor || '#e0556e')
     // Re-route to the saved output device. If it's gone (ids rotate with hardware
@@ -689,11 +709,24 @@ export const useStore = create<State>((set, get) => ({
     })
     applyLeveling() // station → 0 dB
     audio.loadUrl(toRadioUrl(station.url), true)
+    persistRadio() // remember the updated play-history across restarts
   },
   stopStation: () => {
     if (!get().currentStation) return
     audio.stop()
     set({ currentStation: null, stationTitle: null, playing: false, position: 0 })
+  },
+  // Star/unstar a station. Toggle by url so the same station from a search row,
+  // a recent row, or a seed is treated as one. Persisted to radio.json.
+  toggleFavorite: (station) => {
+    const favorites = get().favorites
+    const exists = favorites.some((s) => s.url === station.url)
+    set({
+      favorites: exists
+        ? favorites.filter((s) => s.url !== station.url)
+        : [station, ...favorites]
+    })
+    persistRadio()
   },
 
   togglePlay: () => {

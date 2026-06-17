@@ -85,6 +85,14 @@ export interface RadioQuery {
   country?: string
 }
 
+/** Persisted radio state (Phase D4, `radio.json`): explicitly-starred `favorites`
+ *  and the `recent` play-history, both surviving restart. The play-history was
+ *  session-only in D3; persisting it here makes the dialog's Recent tab durable. */
+export interface RadioData {
+  favorites: Station[]
+  recent: Station[]
+}
+
 /** the rearrangeable widgets in the top bar, in display order */
 export type TopbarWidget = 'logo' | 'transport' | 'nowPlaying' | 'viz' | 'settings' | 'volume'
 

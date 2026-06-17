@@ -2,9 +2,9 @@ import { useEffect, useRef, useState } from 'react'
 import type { RadioStation, Station } from '../../../shared/types'
 import { useStore } from '../store'
 
-// A small hand-picked set of reliable streams so the Known Stations tab is never
-// empty on first open. It's shown beneath the stations you've played this
-// session; Phase D4 turns this tab into persisted favorites (radio.json).
+// A small hand-picked set of reliable streams so the Recent tab is never empty on
+// first run. Shown only when you haven't played anything yet; once you do, your
+// own play-history (persisted in radio.json) takes over.
 const SEEDS: Station[] = [
   {
     id: 'seed-groovesalad',
@@ -32,11 +32,12 @@ const SEEDS: Station[] = [
   }
 ]
 
-type Tab = 'search' | 'known'
+type Tab = 'search' | 'favorites' | 'recent'
 
 export function RadioDialog({ onClose }: { onClose: () => void }) {
   const currentStation = useStore((s) => s.currentStation)
   const recentStations = useStore((s) => s.recentStations)
+  const favorites = useStore((s) => s.favorites)
   const [tab, setTab] = useState<Tab>('search')
   const [name, setName] = useState('')
   const [tag, setTag] = useState('')
@@ -69,10 +70,24 @@ export function RadioDialog({ onClose }: { onClose: () => void }) {
     onClose()
   }
 
-  // Known tab = stations played this session, then the seed list, de-duped by url
-  const knownUrls = new Set(recentStations.map((s) => s.url))
-  const known: Station[] = [...recentStations, ...SEEDS.filter((s) => !knownUrls.has(s.url))]
-  const rows: Station[] | null = tab === 'known' ? known : results
+  const favUrls = new Set(favorites.map((s) => s.url))
+
+  // Recent = your play-history; fall back to the seed list while it's empty so
+  // there's always something to play on first run.
+  const recent: Station[] = recentStations.length ? recentStations : SEEDS
+  const rows: Station[] | null =
+    tab === 'search' ? results : tab === 'favorites' ? favorites : recent
+
+  const emptyMsg =
+    tab === 'search'
+      ? searching
+        ? 'Searching…'
+        : results === null
+          ? 'Search by name, tag, or country to find stations.'
+          : 'No stations matched — try a broader search.'
+      : tab === 'favorites'
+        ? 'No favorites yet — tap ☆ on any station to save it here.'
+        : 'No stations played yet.'
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
@@ -95,10 +110,16 @@ export function RadioDialog({ onClose }: { onClose: () => void }) {
             Search
           </button>
           <button
-            className={`radio-tab ${tab === 'known' ? 'active' : ''}`}
-            onClick={() => setTab('known')}
+            className={`radio-tab ${tab === 'favorites' ? 'active' : ''}`}
+            onClick={() => setTab('favorites')}
           >
-            Known Stations
+            Favorites
+          </button>
+          <button
+            className={`radio-tab ${tab === 'recent' ? 'active' : ''}`}
+            onClick={() => setTab('recent')}
+          >
+            Recent
           </button>
         </div>
 
@@ -133,18 +154,22 @@ export function RadioDialog({ onClose }: { onClose: () => void }) {
         )}
 
         <div className="modal-body radio-results">
-          {rows === null ? (
-            <div className="radio-empty">Search by name, tag, or country to find stations.</div>
-          ) : rows.length === 0 ? (
-            <div className="radio-empty">
-              {searching ? 'Searching…' : 'No stations matched — try a broader search.'}
-            </div>
+          {rows === null || rows.length === 0 ? (
+            <div className="radio-empty">{emptyMsg}</div>
           ) : (
             <div className="station-list">
               {rows.map((st) => {
                 const live = currentStation?.url === st.url
+                const faved = favUrls.has(st.url)
                 return (
                   <div className={`station-row ${live ? 'live' : ''}`} key={st.id}>
+                    <button
+                      className={`station-star ${faved ? 'on' : ''}`}
+                      title={faved ? 'Remove from favorites' : 'Add to favorites'}
+                      onClick={() => useStore.getState().toggleFavorite(st)}
+                    >
+                      {faved ? '★' : '☆'}
+                    </button>
                     <div className="station-main">
                       <div className="station-name">
                         {st.name}

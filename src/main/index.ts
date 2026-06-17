@@ -14,7 +14,7 @@ import { downloadFfmpeg, findFfmpeg, measureLoudness, measureVibe, transcode } f
 import { searchStations } from './radio'
 import { scanFolder, scanPaths } from './scanner'
 import * as store from './store'
-import type { Playlist, RadioQuery, Settings, TagCandidate, Track } from '../shared/types'
+import type { Playlist, RadioData, RadioQuery, Settings, TagCandidate, Track } from '../shared/types'
 
 // 'media' serves local audio files to the renderer with Range support (needed for seeking).
 // 'radio' proxies arbitrary internet-radio streams and re-serves them same-origin with an
@@ -224,6 +224,10 @@ function registerIpc(): void {
 
   // Phase D3 — search the radio-browser directory for stations to play
   ipcMain.handle('radio-search', (_e, query: RadioQuery) => searchStations(query))
+
+  // Phase D4 — persisted radio favorites + play-history (radio.json)
+  ipcMain.handle('get-radio', () => store.getRadio())
+  ipcMain.handle('save-radio', (_e, data: RadioData) => store.saveRadio(data))
 
   // write tags to the file, then rescan it so the library reflects reality
   ipcMain.handle('apply-tags', async (_e, trackPath: string, tags: TagCandidate) => {

@@ -6,6 +6,7 @@ import {
   ALL_VIZ_SCOPES,
   DEFAULT_TOPBAR_LAYOUT,
   type Playlist,
+  type RadioData,
   type Settings,
   type Track
 } from '../shared/types'
@@ -54,6 +55,15 @@ export const saveLibrary = (tracks: Track[]) => writeJson('library.json', tracks
 
 export const getPlaylists = () => readJson<Playlist[]>('playlists.json', [])
 export const savePlaylists = (playlists: Playlist[]) => writeJson('playlists.json', playlists)
+
+// Radio favorites + play-history (Phase D4). Merged with a default so an older
+// file missing one key still loads cleanly.
+const DEFAULT_RADIO: RadioData = { favorites: [], recent: [] }
+export const getRadio = async (): Promise<RadioData> => ({
+  ...DEFAULT_RADIO,
+  ...(await readJson<Partial<RadioData>>('radio.json', {}))
+})
+export const saveRadio = (data: RadioData) => writeJson('radio.json', data)
 
 const DEFAULT_SETTINGS: Settings = {
   volume: 0.8,

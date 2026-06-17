@@ -1545,6 +1545,26 @@ body {
   background: color-mix(in srgb, var(--accent) 14%, transparent);
 }
 
+.station-star {
+  flex: none;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  padding: 2px;
+  color: var(--text-faint);
+  transition: color 0.12s;
+}
+
+.station-star:hover {
+  color: var(--text-dim);
+}
+
+.station-star.on {
+  color: var(--accent);
+}
+
 .station-main {
   flex: 1;
   min-width: 0;
