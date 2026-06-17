@@ -261,7 +261,7 @@ later if real stations in D3 need it. **Live test to run:** play *Radio (test)* 
 **current track's artist/song**, updating as songs change, with the station name beneath; turn on
 nerd mode to see the `MP3 128k` chip.
 
-**Phase D3 — radio-browser client + browse dialog: DONE & user-tested 2026-06-17 (commit `__D3__`)** —
+**Phase D3 — radio-browser client + browse dialog: DONE & user-tested 2026-06-17 (commit `ead1e50`)** —
 search-and-play works end-to-end. New `src/main/radio.ts` (mirrors `art.ts`/`acoustid.ts`):
 descriptive `User-Agent`, picks a mirror by resolving `all.api.radio-browser.info` via
 `dns.resolve4` + reverse-lookup (cached per session; hardcoded `de2`/`at1` fallback; a failed
