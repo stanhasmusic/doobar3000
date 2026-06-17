@@ -137,6 +137,9 @@ interface State {
   /** the internet-radio station currently playing, if any (Phase D). Mutually
    *  exclusive with track playback: a station playing means currentPath is null. */
   currentStation: Station | null
+  /** current-song title parsed from the station's ICY metadata (Phase D2;
+   *  null until the first StreamTitle arrives — falls back to the station name) */
+  stationTitle: string | null
   playing: boolean
   position: number
   volume: number
@@ -329,6 +332,7 @@ export const useStore = create<State>((set, get) => ({
   repeat: 'off',
   currentPath: null,
   currentStation: null,
+  stationTitle: null,
   playing: false,
   position: 0,
   volume: 0.8,
@@ -429,6 +433,12 @@ export const useStore = create<State>((set, get) => ({
     window.api.onVibeUpdate((u) => {
       pendingVibe.set(u.path, { brightness: u.brightness, bpm: u.bpm })
       scheduleAnalysisFlush()
+    })
+    // Radio ICY now-playing title (Phase D2). Ignore stray frames that arrive
+    // after the user has left radio; treat empty as "no title".
+    window.api.onRadioTitle((title) => {
+      if (!get().currentStation) return
+      set({ stationTitle: title.trim() || null })
     })
     if (ffmpeg.found) {
       if (library.some((t) => t.lufs === null)) void window.api.analyzeLoudness()
@@ -644,6 +654,7 @@ export const useStore = create<State>((set, get) => ({
       orderPos: order.indexOf(index),
       currentPath: paths[index],
       currentStation: null, // starting a track ends any radio playback
+      stationTitle: null,
       playbackPath: paths[index],
       playing: true,
       position: 0
@@ -659,6 +670,7 @@ export const useStore = create<State>((set, get) => ({
   playStation: (station) => {
     set({
       currentStation: station,
+      stationTitle: null, // wait for the new station's ICY metadata
       currentPath: null,
       playbackPath: null,
       orderPos: -1,
@@ -671,7 +683,7 @@ export const useStore = create<State>((set, get) => ({
   stopStation: () => {
     if (!get().currentStation) return
     audio.stop()
-    set({ currentStation: null, playing: false, position: 0 })
+    set({ currentStation: null, stationTitle: null, playing: false, position: 0 })
   },
 
   togglePlay: () => {
@@ -816,6 +828,7 @@ function playAtOrderPos(pos: number): void {
     orderPos: pos,
     currentPath: path,
     currentStation: null, // advancing the queue ends any radio playback
+    stationTitle: null,
     playbackPath: path,
     playing: true,
     position: 0

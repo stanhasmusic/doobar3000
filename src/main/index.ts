@@ -6,7 +6,7 @@ import http from 'node:http'
 import https from 'node:https'
 import type { IncomingMessage } from 'node:http'
 import path from 'node:path'
-import { Readable } from 'node:stream'
+import { Readable, Transform } from 'node:stream'
 import { applyAlbumTags, applyTags, downloadFpcalc, findFpcalc, identify } from './acoustid'
 import type { AlbumFields } from './acoustid'
 import { clearArt, fetchArt, getCachedArt, setArt } from './art'
@@ -344,13 +344,19 @@ function registerIpc(): void {
 // ── Internet-radio stream proxy (Phase D) ───────────────────────────────────
 // Opens an upstream radio URL with node's (lenient) http/https rather than fetch:
 // some Shoutcast servers answer "ICY 200 OK" instead of "HTTP/1.1 200 OK", which
-// undici/net.request reject. Follows a few redirects. D1 is audio-only — ICY
-// now-playing metadata (Icy-MetaData/icy-metaint byte stripping) lands in D2.
+// undici/net.request reject. Follows a few redirects. We ask for ICY metadata
+// (Icy-MetaData: 1) so we can surface the current song (Phase D2); the response's
+// `icy-metaint` header drives the byte de-interleave below.
+// NOTE: node's http parser still rejects the bare "ICY 200 OK" status line that
+// some Shoutcast v1 servers use (no HTTP version). Those stations won't open —
+// a documented limitation; the raw-socket shim (rewrite the status line) can be
+// added later if real stations need it.
 function openRadioStream(url: string, depth = 0): Promise<IncomingMessage> {
   return new Promise((resolve, reject) => {
     if (depth > 4) return reject(new Error('too many redirects'))
     const mod = url.startsWith('https:') ? https : http
-    const req = mod.get(url, { headers: { 'User-Agent': 'Doobar3000/1.0 (music player)' } }, (res) => {
+    const headers = { 'User-Agent': 'Doobar3000/1.0 (music player)', 'Icy-MetaData': '1' }
+    const req = mod.get(url, { headers }, (res) => {
       const status = res.statusCode ?? 0
       const loc = res.headers.location
       if (status >= 300 && status < 400 && loc) {
@@ -365,6 +371,52 @@ function openRadioStream(url: string, depth = 0): Promise<IncomingMessage> {
     })
     req.on('error', reject)
     req.setTimeout(15000, () => req.destroy(new Error('radio connect timeout')))
+  })
+}
+
+// De-interleave an ICY stream: when a server honors `Icy-MetaData: 1`, it inserts
+// a metadata block after every `metaint` bytes of audio — one length byte L, then
+// L*16 bytes of (null-padded) metadata like `StreamTitle='Artist - Song';`.
+// Chromium can't digest those bytes, so we strip them back out and forward only
+// the audio, parsing StreamTitle and reporting it via `onTitle`. Stateful across
+// chunks because a block can straddle a chunk boundary.
+function icyDeinterleave(metaint: number, onTitle: (title: string) => void): Transform {
+  let audioLeft = metaint // audio bytes until the next metadata block
+  let metaLeft = 0 // metadata bytes still to read (0 = not currently in a block)
+  let needLen = false // next byte is the metadata length indicator
+  let metaParts: Buffer[] = []
+  return new Transform({
+    transform(chunk: Buffer, _enc, cb) {
+      const audioOut: Buffer[] = []
+      let i = 0
+      while (i < chunk.length) {
+        if (needLen) {
+          metaLeft = chunk[i] * 16
+          needLen = false
+          i++
+          if (metaLeft === 0) audioLeft = metaint // no metadata this round
+          else metaParts = []
+        } else if (metaLeft > 0) {
+          const take = Math.min(metaLeft, chunk.length - i)
+          metaParts.push(chunk.subarray(i, i + take))
+          metaLeft -= take
+          i += take
+          if (metaLeft === 0) {
+            const meta = Buffer.concat(metaParts).toString('utf8')
+            const m = /StreamTitle='(.*?)';/.exec(meta)
+            if (m) onTitle(m[1].trim())
+            audioLeft = metaint
+          }
+        } else {
+          const take = Math.min(audioLeft, chunk.length - i)
+          audioOut.push(chunk.subarray(i, i + take))
+          audioLeft -= take
+          i += take
+          if (audioLeft === 0) needLen = true
+        }
+      }
+      cb(null, audioOut.length ? Buffer.concat(audioOut) : undefined)
+    }
   })
 }
 
@@ -422,14 +474,32 @@ app.whenReady().then(async () => {
 
   // Proxy an internet-radio stream and re-serve it same-origin with ACAO so the
   // renderer's crossOrigin <audio> can feed it into the Web Audio graph (Phase D).
-  // The upstream URL is the percent-encoded tail of the radio:// URL.
+  // The upstream URL is the percent-encoded tail of the radio:// URL. When the
+  // server interleaves ICY metadata, strip it out and push StreamTitle to the
+  // renderer (Phase D2). Only the most-recent connection's titles matter, so the
+  // renderer clears its title on each new station / pause.
   protocol.handle('radio', async (request) => {
     const upstream = decodeURIComponent(request.url.slice('radio://'.length))
     if (!/^https?:\/\//.test(upstream)) return new Response('bad radio url', { status: 400 })
     if (process.env.DEBUG_LOG) console.log('[radio]', upstream.slice(0, 120))
     try {
       const res = await openRadioStream(upstream)
-      return new Response(Readable.toWeb(res) as ReadableStream, {
+      const metaint = Number(res.headers['icy-metaint'])
+      let body: Readable = res
+      if (Number.isFinite(metaint) && metaint > 0) {
+        let last = ''
+        const de = icyDeinterleave(metaint, (title) => {
+          if (title === last) return // servers re-send the same block; only emit changes
+          last = title
+          win?.webContents.send('radio-title', title)
+        })
+        res.on('error', (e) => de.destroy(e)) // upstream drop → tear the transform down too
+        body = res.pipe(de)
+      }
+      // If the consumer (Chromium) cancels — el.src changed, window closed — tear
+      // down the upstream socket so we don't leak a connection per station switch.
+      body.on('close', () => res.destroy())
+      return new Response(Readable.toWeb(body) as ReadableStream, {
         status: 200,
         headers: {
           'Access-Control-Allow-Origin': '*',

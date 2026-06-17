@@ -245,10 +245,24 @@ fall into the queue), `audio.loadUrl`/`toRadioUrl`, a "● LIVE" `WaveformBar`, 
 branch in `TopBar`, and a **temporary "Radio (test)" sidebar entry** (D1 SPIKE PLACEHOLDER → SomaFM
 Groove Salad; D3 replaces it with the radio-browser dialog).
 
-**Next up: Phase D2 — ICY now-playing metadata** (request `Icy-MetaData: 1` in the proxy, read
-`icy-metaint`, strip the metadata bytes out of the audio, parse `StreamTitle`, push it over IPC to
-the now-playing widget + nerd format chip). This is where the hand-rolled-vs-`icy`-dep decision
-gets made.
+**Phase D2 — ICY now-playing metadata: built & type-clean, uncommitted, pending a live test.**
+Decision made: **hand-rolled de-interleave over `http`/`https`.get** (zero-dep, consistent with
+D1), not the `icy` package or a raw-socket rewrite. The proxy now requests `Icy-MetaData: 1`; when
+the response carries `icy-metaint`, `icyDeinterleave` (a stateful `Transform` in
+`src/main/index.ts`) strips the interleaved metadata blocks back out of the audio, parses
+`StreamTitle`, and pushes it (on change only) to the renderer via the new `radio-title` IPC →
+`stationTitle` in the store → the now-playing widget shows the **current song** (station name drops
+to the sub-line) and nerd mode gets a stream-format chip (e.g. `MP3 128k`). Upstream socket is torn
+down when the consumer cancels (station switch / pause) so connections don't leak.
+**Known limitation (documented):** node's http parser rejects the bare `ICY 200 OK` status line
+some *Shoutcast v1* servers use — those won't open; the raw-socket status-line shim can be added
+later if real stations in D3 need it. **Live test to run:** play *Radio (test)* (SomaFM sends ICY)
+— within a few seconds the now-playing headline should switch from "SomaFM — Groove Salad" to the
+**current track's artist/song**, updating as songs change, with the station name beneath; turn on
+nerd mode to see the `MP3 128k` chip.
+
+**Next up: Phase D3 — radio-browser client + browse dialog** (new `src/main/radio.ts`, sidebar
+"Radio" entry → modal Search/Known dialog; replaces the D1 spike sidebar entry).
 
 **Library UX + tagging pass — DONE & user-tested 2026-06-15** (two commits). Triggered by
 a Bob Marley *Legend* track showing no auto art. Shipped: (1) **better cover-art lookup** —

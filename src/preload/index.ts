@@ -80,6 +80,12 @@ const api = {
   onVibeProgress: (cb: (p: ScanProgress) => void): void => {
     ipcRenderer.on('vibe-progress', (_e, p: ScanProgress) => cb(p))
   },
+  // ── Internet radio (Phase D) ──────────────────────────────────────────────
+  // Main process → main window: the current-song title parsed from the ICY
+  // stream metadata ('' = none). The proxy only emits on change.
+  onRadioTitle: (cb: (title: string) => void): void => {
+    ipcRenderer.on('radio-title', (_e, title: string) => cb(title))
+  },
   // ── Visualizer pop-out windows (Phase C) ──────────────────────────────────
   // Open a floating window for a scope (main process creates the BrowserWindow).
   openVizPopout: (scope: VizScope): Promise<void> => ipcRenderer.invoke('viz-popout-open', scope),

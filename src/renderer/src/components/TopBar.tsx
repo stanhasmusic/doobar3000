@@ -49,6 +49,7 @@ export function TopBar() {
   const playing = useStore((s) => s.playing)
   const currentPath = useStore((s) => s.currentPath)
   const station = useStore((s) => s.currentStation)
+  const stationTitle = useStore((s) => s.stationTitle)
   const position = useStore((s) => s.position)
   const volume = useStore((s) => s.volume)
   const library = useStore((s) => s.library)
@@ -148,17 +149,27 @@ export function TopBar() {
     nowPlaying: (
       <div className="now-playing">
         {station ? (
-          // Radio: station name + a LIVE marker. The current-song (ICY) title
-          // lands in Phase D2; for now the sub-line is the stream's codec/bitrate.
+          // Radio: the current song (from ICY metadata) is the headline once it
+          // arrives; the station name drops to the sub-line. Until then the
+          // station name is the headline. Nerd mode adds a stream-format chip.
           <>
-            <div className="np-title">{station.name}</div>
+            <div className="np-title">{stationTitle || station.name}</div>
             <div className="np-sub">
-              {[station.codec?.toUpperCase(), station.bitrate ? `${station.bitrate}kbps` : '']
-                .filter(Boolean)
-                .join(' · ') || 'Internet radio'}
+              {stationTitle
+                ? station.name
+                : [station.codec?.toUpperCase(), station.bitrate ? `${station.bitrate}kbps` : '']
+                    .filter(Boolean)
+                    .join(' · ') || 'Internet radio'}
             </div>
             <div className="np-time">
               <span className="np-live">● LIVE</span>
+              {nerdMode && (station.codec || station.bitrate) && (
+                <span className="np-format" title="radio stream format">
+                  {[station.codec?.toUpperCase(), station.bitrate ? `${station.bitrate}k` : '']
+                    .filter(Boolean)
+                    .join(' ')}
+                </span>
+              )}
             </div>
           </>
         ) : track ? (
