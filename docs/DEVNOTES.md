@@ -242,3 +242,96 @@ Two paths still want a real-world try because the harness can't supply the input
 **auto-tag identification** (paste a free AcoustID key in ⚙, then right-click a track →
 Identify) and **online cover-art fetch** (play a track with no embedded art but clean
 album/artist tags — watch the art panel fill in).
+
+## Planned — Nerd Mode + Internet Radio (designed 2026-06-16, not yet built)
+
+Design agreed via a grilling session. **Foundational constraint:** stay in the Web Audio
+architecture, **no native modules**. True WASAPI *exclusive* / bit-perfect output is a
+**documented non-goal** — Chromium only does WASAPI *shared*, and the only path to exclusive
+(`naudiodon`/PortAudio) means a native module (the rebuild pain we deliberately avoided) plus
+bypassing Web Audio entirely (re-implementing ReplayGain + analyser taps outside the graph).
+Parked behind the same "documented, not deleted" treatment as the vibe feature.
+
+**Nerd mode is an annotation layer, not a second UI** — a single persisted `nerdMode` boolean
+(sits beside `theme` in `Settings`) that layers data onto the existing fixed layout. Chosen
+over a parallel layout/skin (contradicts the "fixed, polished, no-assembly" identity and
+doubles the CSS surface) and over per-widget toggles (fragments discovery).
+
+Build order **A → B → C → D**, each independently shippable and user-testable.
+
+### Phase A — Settings tree (foundation)
+
+- **One modal tree dialog replaces the gear popup for everyone** (chosen over keeping the
+  popup + a separate tree, to avoid two-places-to-update drift). Opens to last-visited node;
+  most-common toggles surface first so it still feels quick.
+- Nodes, **two-level max** (deeper would be cargo-culting foobar structure we lack features
+  for): `General` (nerd-mode toggle — always visible so it's reachable in both modes —
+  About/version, welcome replay) · `Display` → {Colors [existing theme/accent],
+  Visualizers [nerd]} · `Playback` → {Output, Leveling [existing R128]} ·
+  `Library & Tagging` [existing decoder pack, AcoustID key, fpcalc] · `Advanced` [nerd].
+- **No radio node** — discoverability comes from the sidebar entry.
+
+### Phase B — Nerd mode core (depends on A)
+
+- Top-bar viz **annotations**: frequency-axis labels on the spectrum, dB scale + live
+  peak/RMS readout on the VU. Shown only when the widget is wide enough to stay legible.
+- **Output panel** (Playback → Output). Device picker is for **everyone**; the verbose
+  readout is **nerd-only**.
+  - **Use `AudioContext.setSinkId(deviceId)`, NOT the element's `setSinkId`** — audio plays
+    through `ctx.destination` (the graph took over the element's output), so the element's
+    sink id is ignored. `AudioContext.setSinkId` is Chromium 110+; we're on Electron 35
+    (Chromium ~134), so it's available. Without this nothing routes.
+  - Honest **`WASAPI (Shared)`** label + a one-line "exclusive/bit-perfect needs a native
+    engine — not supported" note. Verbose readout: mix format (`ctx.sampleRate`/channels),
+    source format (file rate / bit depth / codec), and a **resampling indicator** when
+    source rate ≠ mix rate.
+  - Persist chosen `deviceId`; on launch, if the device is gone, silently fall back to the
+    system default (device ids rotate with hardware changes).
+- **Format chip** near now-playing, **nerd-only** (e.g. `FLAC 44.1/16 → 48k shared`) — the
+  cheapest way to make nerd mode feel drastically more informative at a glance.
+
+### Phase C — Visualizer overlay (nerd-gated; depends on B)
+
+- An **expandable overlay** reusing the album-art lightbox pattern (`ArtPanel` full-window).
+  **Single-select stage** (one big visualizer at a time via tabs/dropdown) — chosen over a
+  multi-panel dashboard: each scope wants real estate, perf stays trivial (one renderer), and
+  you stare at one scope at a time anyway. A 2-up split can come later if missed.
+- Visualizers: Spectrum / **Spectrogram** (scrolling time×freq waterfall) / Oscilloscope /
+  Goniometer. **All read existing analyser taps — no new audio-graph nodes** (spectrogram from
+  `spectrumAnalyser` freq data; oscilloscope/goniometer from the L/R `vuAnalysers`
+  `getFloatTimeDomainData`). Fits the "stay in Web Audio" constraint cleanly.
+- Which visualizers are available is toggled in **Display → Visualizers**. New visualizers are
+  **overlay-only** (not top-bar widgets — keeps the rearrangeable-layout surface and the
+  top-bar space problem closed). The overlay's rAF loop runs **only while open**.
+
+### Phase D — Internet radio (independent of A–C; largest single chunk)
+
+- **The CORS landmine (already a documented gotcha):** radio streams come from arbitrary
+  Shoutcast/Icecast servers that don't send `Access-Control-Allow-Origin`. With
+  `crossOrigin='anonymous'` the stream fails to load; without it the element is tainted and
+  `MediaElementSource` feeds **silence** to the graph (no viz). **Solution: proxy through the
+  main process** — a `radio://` protocol (sibling to `media://`) fetches the stream and
+  re-serves it with an `ACAO` header so the renderer loads it **same-origin → the full graph
+  (visualizers, VU, scopes) works on radio**. Chosen over bypassing the graph, which would
+  make radio the one source where all the new viz goes black — broken precisely in nerd mode.
+- **ICY now-playing metadata:** radio-browser gives the station, not the current song. The
+  proxy requests `Icy-MetaData: 1`, reads `icy-metaint`, extracts `StreamTitle`, **strips the
+  metadata bytes out of the audio** before forwarding (Chromium can't digest inline ICY bytes),
+  and pushes the title to the renderer over IPC. Best-effort → falls back to station name.
+  Feeds the now-playing widget and the nerd format chip.
+- **radio-browser client in the main process** (like `art.ts`/`acoustid.ts`): descriptive
+  `User-Agent`, pick a host from `all.api.radio-browser.info` round-robin rather than hammering
+  one mirror. **Sidebar entry "Radio"** (alongside Duplicates/Smart) opens a **modal dialog**:
+  **Search** tab (facets: name / tag / country) + **Known Stations** tab. Columns Name / Codec
+  / Bitrate / Votes / Country, **reusing TrackList/DuplicatesView styling**.
+- **Distinct playback source — a station is NOT a `Track`** (don't pollute library/leveling/
+  column logic). What's playing is *either* a queued track *or* a `currentStation`; starting a
+  station stops the track queue and drives the **same** `<audio>`/graph via the proxy URL.
+  Transport **degraded**: play/pause works; next/prev/seek/shuffle/repeat no-op; the bottom
+  waveform bar becomes a **"● LIVE"** indicator (streamed `duration = Infinity` already handled).
+  **Leveling auto-disabled** for radio (no LUFS for a live stream).
+- **Favorites** persist in a **new `radio.json`** (sibling to `library.json`/`playlists.json`)
+  with a `Station` type `{ id, name, url, codec, bitrate, country, favicon? }` (id =
+  radio-browser uuid); a star/add action on a search row saves it.
+- **Out of scope:** library integration (not in columns / analysis / smart playlists), stream
+  recording/ripping, and auto-resume of the prior queue when radio stops (**stop = just stop**).
