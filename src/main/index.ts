@@ -11,9 +11,10 @@ import { applyAlbumTags, applyTags, downloadFpcalc, findFpcalc, identify } from 
 import type { AlbumFields } from './acoustid'
 import { clearArt, fetchArt, getCachedArt, setArt } from './art'
 import { downloadFfmpeg, findFfmpeg, measureLoudness, measureVibe, transcode } from './ffmpeg'
+import { searchStations } from './radio'
 import { scanFolder, scanPaths } from './scanner'
 import * as store from './store'
-import type { Playlist, Settings, TagCandidate, Track } from '../shared/types'
+import type { Playlist, RadioQuery, Settings, TagCandidate, Track } from '../shared/types'
 
 // 'media' serves local audio files to the renderer with Range support (needed for seeking).
 // 'radio' proxies arbitrary internet-radio streams and re-serves them same-origin with an
@@ -220,6 +221,9 @@ function registerIpc(): void {
   ipcMain.handle('identify-track', (_e, trackPath: string, apiKey: string) =>
     identify(trackPath, apiKey)
   )
+
+  // Phase D3 — search the radio-browser directory for stations to play
+  ipcMain.handle('radio-search', (_e, query: RadioQuery) => searchStations(query))
 
   // write tags to the file, then rescan it so the library reflects reality
   ipcMain.handle('apply-tags', async (_e, trackPath: string, tags: TagCandidate) => {

@@ -261,8 +261,25 @@ later if real stations in D3 need it. **Live test to run:** play *Radio (test)* 
 **current track's artist/song**, updating as songs change, with the station name beneath; turn on
 nerd mode to see the `MP3 128k` chip.
 
-**Next up: Phase D3 — radio-browser client + browse dialog** (new `src/main/radio.ts`, sidebar
-"Radio" entry → modal Search/Known dialog; replaces the D1 spike sidebar entry).
+**Phase D3 — radio-browser client + browse dialog: DONE & user-tested 2026-06-17 (commit `__D3__`)** —
+search-and-play works end-to-end. New `src/main/radio.ts` (mirrors `art.ts`/`acoustid.ts`):
+descriptive `User-Agent`, picks a mirror by resolving `all.api.radio-browser.info` via
+`dns.resolve4` + reverse-lookup (cached per session; hardcoded `de2`/`at1` fallback; a failed
+fetch clears the cached host so the session recovers). `searchStations({name,tag,country})` hits
+`/json/stations/search` (order=votes, hidebroken, limit 100), prefers `url_resolved`, and **filters
+out HLS** (`hls===1` or `.m3u8`) per the v1 codec scope. Exposed via `radio-search` IPC →
+`window.api.radioSearch` → new `RadioDialog` modal (reuses `.modal*` styling) with **Search**
+(name/tag/country facets, votes column) + **Known Stations** tabs. Types added: `RadioStation`
+(Station + `votes`) and `RadioQuery` in `shared/types.ts`. The **Sidebar "Radio" entry** (glyph
+`∿`, monochrome to match ♫/⧉) opens the dialog and **replaces the D1 spike** entry (SPIKE_STATION
+const removed). **Known Stations = session play-history**: a new in-memory `recentStations: Station[]`
+in the store (newest-first, deduped by url, cap 30, pushed in `playStation`) shown above 3 curated
+SomaFM seeds so the tab is never empty. **NOTE for D4:** `recentStations` is session-only (resets on
+app restart) — D4 makes it durable in `radio.json` and adds star/favorite.
+
+**Next up: Phase D4 — Favorites.** New `radio.json` sibling via the existing `readJson`/`writeJson`
+(`src/main/store.ts`) + `get/saveRadioFavorites` IPC; star action on a search/known row; persist
+`recentStations`-style data so Known Stations survives restart.
 
 **Library UX + tagging pass — DONE & user-tested 2026-06-15** (two commits). Triggered by
 a Bob Marley *Legend* track showing no auto art. Shipped: (1) **better cover-art lookup** —

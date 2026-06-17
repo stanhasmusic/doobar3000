@@ -1458,6 +1458,121 @@ body {
   cursor: wait;
 }
 
+/* ---------- Radio dialog (Phase D3) ---------- */
+
+.modal-radio {
+  width: 640px;
+  height: 70vh;
+}
+
+.radio-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 10px 18px 0;
+}
+
+.radio-tab {
+  padding: 7px 14px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--text-dim);
+  font: inherit;
+  cursor: pointer;
+}
+
+.radio-tab:hover {
+  color: var(--text);
+}
+
+.radio-tab.active {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+
+.radio-search {
+  display: flex;
+  gap: 8px;
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--border);
+}
+
+.radio-search input {
+  flex: 1;
+  min-width: 0;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+}
+
+.radio-search input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.radio-results {
+  flex: 1;
+  padding: 8px;
+}
+
+.radio-empty {
+  padding: 24px 10px;
+  text-align: center;
+  color: var(--text-faint);
+}
+
+.station-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.station-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 10px;
+  border-radius: 8px;
+}
+
+.station-row:hover {
+  background: var(--bg-hover);
+}
+
+.station-row.live {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+.station-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.station-name {
+  color: var(--text);
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.station-meta {
+  font-size: 12px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.station-votes {
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+
 /* ---------- Confirm dialog ---------- */
 
 .modal-confirm {

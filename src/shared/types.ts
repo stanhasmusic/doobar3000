@@ -71,6 +71,20 @@ export interface Station {
   favicon?: string
 }
 
+/** A station as it comes back from a radio-browser search: a playable Station
+ *  plus the display-only vote count used to rank/show results (Phase D3). */
+export interface RadioStation extends Station {
+  votes: number
+}
+
+/** Search facets for the radio-browser browse dialog (Phase D3). All optional;
+ *  blank fields are simply omitted from the query. */
+export interface RadioQuery {
+  name?: string
+  tag?: string
+  country?: string
+}
+
 /** the rearrangeable widgets in the top bar, in display order */
 export type TopbarWidget = 'logo' | 'transport' | 'nowPlaying' | 'viz' | 'settings' | 'volume'
 

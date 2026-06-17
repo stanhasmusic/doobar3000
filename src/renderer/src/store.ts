@@ -140,6 +140,9 @@ interface State {
   /** current-song title parsed from the station's ICY metadata (Phase D2;
    *  null until the first StreamTitle arrives — falls back to the station name) */
   stationTitle: string | null
+  /** stations played this session, most-recent first — populates the Radio
+   *  dialog's "Known Stations" tab (Phase D3; D4 persists these as favorites) */
+  recentStations: Station[]
   playing: boolean
   position: number
   volume: number
@@ -333,6 +336,7 @@ export const useStore = create<State>((set, get) => ({
   currentPath: null,
   currentStation: null,
   stationTitle: null,
+  recentStations: [],
   playing: false,
   position: 0,
   volume: 0.8,
@@ -668,6 +672,11 @@ export const useStore = create<State>((set, get) => ({
   // the user later plays a track. Leveling is forced off (no LUFS for a stream);
   // the bottom bar shows "● LIVE" and the transport degrades (see next/prev/seek).
   playStation: (station) => {
+    // remember it for the Known Stations tab: newest first, no dupes, cap 30
+    const recentStations = [
+      station,
+      ...get().recentStations.filter((s) => s.url !== station.url)
+    ].slice(0, 30)
     set({
       currentStation: station,
       stationTitle: null, // wait for the new station's ICY metadata
@@ -675,7 +684,8 @@ export const useStore = create<State>((set, get) => ({
       playbackPath: null,
       orderPos: -1,
       playing: true,
-      position: 0
+      position: 0,
+      recentStations
     })
     applyLeveling() // station → 0 dB
     audio.loadUrl(toRadioUrl(station.url), true)

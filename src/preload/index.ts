@@ -3,6 +3,8 @@ import type {
   FfmpegStatus,
   IdentifyResult,
   Playlist,
+  RadioQuery,
+  RadioStation,
   ScanProgress,
   Settings,
   TagCandidate,
@@ -86,6 +88,9 @@ const api = {
   onRadioTitle: (cb: (title: string) => void): void => {
     ipcRenderer.on('radio-title', (_e, title: string) => cb(title))
   },
+  // Search the radio-browser directory (Phase D3).
+  radioSearch: (query: RadioQuery): Promise<RadioStation[]> =>
+    ipcRenderer.invoke('radio-search', query),
   // ── Visualizer pop-out windows (Phase C) ──────────────────────────────────
   // Open a floating window for a scope (main process creates the BrowserWindow).
   openVizPopout: (scope: VizScope): Promise<void> => ipcRenderer.invoke('viz-popout-open', scope),
