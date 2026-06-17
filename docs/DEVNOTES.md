@@ -287,6 +287,17 @@ render, re-homed controls work, nerd toggle reveals/hides Advanced.
 2026-06-16 that switching to a specific output device reroutes audio *and* the visualizers
 keep working (the `setSinkId`-on-the-AudioContext path holds the whole graph together).
 
+**Backlog (Stan, 2026-06-16) — adaptive nerd-axis label density.** The Phase B annotations
+currently use a *fixed* set of marks: spectrum Hz axis = `100 / 1k / 10k` (`FREQ_TICKS` in
+`Visualizers.tsx`), VU dB scale = `−24 / −12 / −6 / 0` (`VU_TICKS`). Stan wants the count to
+**scale with the rendered widget width** — a small window shows just a few, a wide window
+fills the empty space with more (finer) frequency / dB graduations. Both axes. Implementation
+sketch: pick the tick set at draw time from the live canvas `w` (we already have it in the
+`useCanvasLoop` draw callback) — e.g. a denser candidate list (…/200/500/1k/2k/5k/10k… and
+−36/−24/−18/−12/−9/−6/−3/0) thinned to whatever fits at a min label spacing (~38–45px),
+rather than the hard-coded 3/4. Keep the legibility gate. Spectrogram (Phase C) gets the same
+treatment for its time/freq axes.
+
 ### Phase B — Nerd mode core (depends on A)
 
 **DONE & self-verified 2026-06-16 (harness screenshots) — working.** All three pieces
