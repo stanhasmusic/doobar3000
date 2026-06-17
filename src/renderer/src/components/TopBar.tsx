@@ -4,6 +4,7 @@ import { formatChip, formatTime, trackByPath, useStore } from '../store'
 import { LogoMark } from './LogoMark'
 import { SettingsMenu } from './SettingsMenu'
 import { Spectrum, VuMeter } from './Visualizers'
+import { VisualizerOverlay } from './VisualizerOverlay'
 import { clampToViewport } from '../clampMenu'
 
 const Icon = ({ d, size = 16 }: { d: string; size?: number }) => (
@@ -54,6 +55,7 @@ export function TopBar() {
   const [arranging, setArranging] = useState(false)
   const [drag, setDrag] = useState<Drag | null>(null)
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null)
+  const [vizOpen, setVizOpen] = useState(false)
 
   const track = trackByPath(library, currentPath)
 
@@ -140,7 +142,11 @@ export function TopBar() {
       </div>
     ),
     viz: (
-      <div className="viz">
+      <div
+        className={`viz ${nerdMode && !arranging ? 'viz-expandable' : ''}`}
+        onClick={nerdMode && !arranging ? () => setVizOpen(true) : undefined}
+        title={nerdMode && !arranging ? 'Expand visualizers' : undefined}
+      >
         <Spectrum />
         <VuMeter />
       </div>
@@ -240,6 +246,8 @@ export function TopBar() {
           {WIDGET_LABELS[drag.key]}
         </div>
       )}
+
+      {vizOpen && nerdMode && <VisualizerOverlay onClose={() => setVizOpen(false)} />}
 
       {menu && (
         <div ref={clampToViewport} className="context-menu" style={{ left: menu.x, top: menu.y }}>

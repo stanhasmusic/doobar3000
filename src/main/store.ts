@@ -2,7 +2,13 @@ import { app } from 'electron'
 import { createHash } from 'node:crypto'
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
-import { DEFAULT_TOPBAR_LAYOUT, type Playlist, type Settings, type Track } from '../shared/types'
+import {
+  ALL_VIZ_SCOPES,
+  DEFAULT_TOPBAR_LAYOUT,
+  type Playlist,
+  type Settings,
+  type Track
+} from '../shared/types'
 
 function dataDir(): string {
   return app.getPath('userData')
@@ -63,7 +69,8 @@ const DEFAULT_SETTINGS: Settings = {
   accentColor: '#e0556e',
   seenWelcome: false,
   nerdMode: false,
-  outputDeviceId: ''
+  outputDeviceId: '',
+  visualizers: ALL_VIZ_SCOPES
 }
 export const getSettings = async (): Promise<Settings> => ({
   ...DEFAULT_SETTINGS,

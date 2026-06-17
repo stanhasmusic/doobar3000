@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import {
+  ALL_VIZ_SCOPES,
   DEFAULT_TOPBAR_LAYOUT,
   type ColumnKey,
   type FfmpegStatus,
@@ -9,7 +10,8 @@ import {
   type ScanProgress,
   type Theme,
   type TopbarWidget,
-  type Track
+  type Track,
+  type VizScope
 } from '../../shared/types'
 import { audio } from './audio'
 import { VIBE_ENABLED } from './smartPlaylists'
@@ -200,6 +202,8 @@ interface State {
   nerdMode: boolean
   /** chosen audio output device id ('' = system default) */
   outputDeviceId: string
+  /** big visualizers offered in the nerd-mode overlay (Display → Visualizers) */
+  visualizers: VizScope[]
   ffmpeg: FfmpegStatus | null
   ffmpegProgress: number | null
   lufsProgress: ScanProgress | null
@@ -224,6 +228,7 @@ interface State {
   setAccentColor: (c: string) => void
   setNerdMode: (on: boolean) => void
   setOutputDevice: (deviceId: string) => Promise<void>
+  setVisualizers: (v: VizScope[]) => void
   dismissWelcome: () => void
   replayWelcome: () => void
   removeFromLibrary: (paths: string[]) => Promise<void>
@@ -273,7 +278,8 @@ function persistSettings(): void {
     accentColor: s.accentColor,
     seenWelcome: s.seenWelcome,
     nerdMode: s.nerdMode,
-    outputDeviceId: s.outputDeviceId
+    outputDeviceId: s.outputDeviceId,
+    visualizers: s.visualizers
   })
 }
 
@@ -368,6 +374,7 @@ export const useStore = create<State>((set, get) => ({
   seenWelcome: true, // assume seen until init loads the real setting (avoids a flash)
   nerdMode: false,
   outputDeviceId: '',
+  visualizers: ALL_VIZ_SCOPES,
   ffmpeg: null,
   ffmpegProgress: null,
   lufsProgress: null,
@@ -402,6 +409,7 @@ export const useStore = create<State>((set, get) => ({
       seenWelcome: settings.seenWelcome ?? false,
       nerdMode: settings.nerdMode ?? false,
       outputDeviceId: settings.outputDeviceId ?? '',
+      visualizers: settings.visualizers?.length ? settings.visualizers : ALL_VIZ_SCOPES,
       ffmpeg,
       fpcalcFound
     })
@@ -538,6 +546,11 @@ export const useStore = create<State>((set, get) => ({
     } else {
       get().showNotice('Could not switch to that output device.')
     }
+  },
+
+  setVisualizers: (visualizers) => {
+    set({ visualizers })
+    persistSettings()
   },
 
   dismissWelcome: () => {

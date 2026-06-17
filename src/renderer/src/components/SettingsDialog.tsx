@@ -1,5 +1,11 @@
 import { useEffect, useState } from 'react'
-import type { LevelMode, Theme } from '../../../shared/types'
+import {
+  ALL_VIZ_SCOPES,
+  VIZ_SCOPE_LABELS,
+  type LevelMode,
+  type Theme,
+  type VizScope
+} from '../../../shared/types'
 import { audio } from '../audio'
 import { formatRate, trackByPath, useStore } from '../store'
 
@@ -30,7 +36,14 @@ interface TreeNode {
 }
 const TREE: TreeNode[] = [
   { id: 'general', label: 'General' },
-  { id: 'display', label: 'Display', subs: [{ id: 'colors', label: 'Colors' }] },
+  {
+    id: 'display',
+    label: 'Display',
+    subs: [
+      { id: 'colors', label: 'Colors' },
+      { id: 'visualizers', label: 'Visualizers', nerd: true }
+    ]
+  },
   {
     id: 'playback',
     label: 'Playback',
@@ -131,7 +144,7 @@ function NodeContent({
     case 'general':
       return <GeneralPanel onClose={onClose} />
     case 'display':
-      return <ColorsPanel />
+      return subId === 'visualizers' ? <VisualizersPanel /> : <ColorsPanel />
     case 'playback':
       return subId === 'leveling' ? <LevelingPanel /> : <OutputPanel />
     case 'library':
@@ -139,8 +152,9 @@ function NodeContent({
     case 'advanced':
       return (
         <p className="set-hint">
-          Advanced diagnostics will appear here as Nerd Mode features land (the expandable
-          visualizer overlay is next). Output and format details live under Playback → Output.
+          Advanced diagnostics will appear here as Nerd Mode features land. Output and format
+          details live under Playback → Output; the expandable visualizer overlay is under
+          Display → Visualizers (and opens from the top-bar viz widget).
         </p>
       )
   }
@@ -230,6 +244,53 @@ function ColorsPanel(): React.ReactNode {
         {theme === 'custom'
           ? 'Custom uses the dark base with your accent color — pick from the wheel or type a hex code.'
           : 'Light, dark, and a couple of modern/classic palettes.'}
+      </div>
+    </>
+  )
+}
+
+const VIZ_DESCRIPTIONS: Record<VizScope, string> = {
+  spectrum: 'Big log-frequency bar spectrum with peak-hold.',
+  spectrogram: 'Scrolling time × frequency waterfall.',
+  oscilloscope: 'L/R waveform (time-domain) trace.',
+  goniometer: 'Vectorscope — stereo width & phase (mono sits vertical).'
+}
+
+function VisualizersPanel(): React.ReactNode {
+  const enabled = useStore((s) => s.visualizers)
+  const { setVisualizers } = useStore.getState()
+
+  const toggle = (scope: VizScope, on: boolean): void => {
+    const next = ALL_VIZ_SCOPES.filter((s) => (s === scope ? on : enabled.includes(s)))
+    setVisualizers(next)
+  }
+
+  return (
+    <>
+      <div className="set-title">Overlay visualizers</div>
+      <div className="viz-toggle-list">
+        {ALL_VIZ_SCOPES.map((scope) => {
+          const on = enabled.includes(scope)
+          return (
+            <label key={scope} className="viz-toggle">
+              <input
+                type="checkbox"
+                checked={on}
+                // keep at least one enabled so the overlay always has something
+                disabled={on && enabled.length === 1}
+                onChange={(e) => toggle(scope, e.target.checked)}
+              />
+              <span className="viz-toggle-text">
+                <span className="viz-toggle-name">{VIZ_SCOPE_LABELS[scope]}</span>
+                <span className="viz-toggle-desc">{VIZ_DESCRIPTIONS[scope]}</span>
+              </span>
+            </label>
+          )
+        })}
+      </div>
+      <div className="set-hint">
+        Pick which scopes the expandable visualizer overlay offers. Open it by clicking the
+        spectrum/VU widget in the top bar (nerd mode).
       </div>
     </>
   )

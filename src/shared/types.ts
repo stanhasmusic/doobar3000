@@ -27,6 +27,21 @@ export type LevelMode = 'off' | 'track' | 'album'
 export type RepeatMode = 'off' | 'all' | 'one'
 export type Theme = 'dark' | 'light' | 'midnight' | 'sepia' | 'custom'
 
+/** the big visualizers offered in the nerd-mode expandable overlay (Phase C) */
+export type VizScope = 'spectrum' | 'spectrogram' | 'oscilloscope' | 'goniometer'
+export const ALL_VIZ_SCOPES: VizScope[] = [
+  'spectrum',
+  'spectrogram',
+  'oscilloscope',
+  'goniometer'
+]
+export const VIZ_SCOPE_LABELS: Record<VizScope, string> = {
+  spectrum: 'Spectrum',
+  spectrogram: 'Spectrogram',
+  oscilloscope: 'Oscilloscope',
+  goniometer: 'Goniometer'
+}
+
 export interface Playlist {
   id: string
   name: string
@@ -83,6 +98,9 @@ export interface Settings {
   /** chosen audio output device (mediaDevices deviceId; '' = system default).
    *  Device ids rotate with hardware changes, so a stale id falls back to default. */
   outputDeviceId: string
+  /** which big visualizers the nerd-mode overlay offers (Display → Visualizers).
+   *  Order is display order in the stage selector. */
+  visualizers: VizScope[]
 }
 
 /** one tag proposal from an AcoustID/MusicBrainz lookup */

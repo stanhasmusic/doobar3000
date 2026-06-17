@@ -1726,3 +1726,163 @@ body {
   color: #fff;
   border-color: var(--accent);
 }
+
+/* ── Phase C: visualizer overlay ─────────────────────────────────────────── */
+
+/* the top-bar viz widget becomes clickable (→ overlay) in nerd mode. The top bar
+   is a window drag region (-webkit-app-region: drag), which otherwise eats the
+   click before onClick can fire — so opt this strip out of dragging when it's the
+   overlay trigger. */
+.viz-expandable {
+  cursor: zoom-in;
+  -webkit-app-region: no-drag;
+}
+
+.viz-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 120; /* above the art lightbox (100) and settings modal (200 is higher,
+                   but the overlay opens from the bar, not over settings) */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.82);
+  -webkit-app-region: no-drag;
+}
+
+.viz-overlay-inner {
+  width: min(88vw, 1100px);
+  height: min(80vh, 680px);
+  display: flex;
+  flex-direction: column;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  box-shadow: 0 16px 60px rgba(0, 0, 0, 0.6);
+}
+
+.viz-overlay-head {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.viz-tabs {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.viz-tabs button {
+  padding: 5px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.65);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.viz-tabs button:hover {
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.32);
+}
+
+.viz-tabs button.on {
+  background: var(--accent);
+  border-color: transparent;
+  color: #fff;
+}
+
+.viz-overlay-close {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.viz-overlay-close:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+.viz-stage {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+}
+
+.viz-stage-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.viz-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 40px;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 14px;
+}
+
+/* Display → Visualizers settings panel */
+.viz-toggle-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.viz-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 7px 8px;
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.viz-toggle:hover {
+  background: var(--bg-raised);
+}
+
+.viz-toggle input {
+  margin-top: 2px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.viz-toggle input:disabled {
+  cursor: not-allowed;
+}
+
+.viz-toggle-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.viz-toggle-name {
+  font-size: 13px;
+  color: var(--text);
+}
+
+.viz-toggle-desc {
+  font-size: 11.5px;
+  color: var(--text-dim);
+}

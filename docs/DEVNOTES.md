@@ -228,6 +228,13 @@ prints media-protocol requests and renderer console to the terminal.
 
 ## Where we left off
 
+**Phase C — visualizer overlay: DONE & self-verified 2026-06-16** (harness screenshots of
+all four scopes — spectrum/spectrogram/oscilloscope/goniometer rendering live audio with the
+midnight accent). Built on the now-complete Nerd-mode A→B→C arc. **Next up is Phase D —
+internet radio** (the largest single chunk; design already written above), independent of
+A–C. Worth a real-world try when convenient: open the overlay (nerd mode → click the top-bar
+viz widget), flip scopes, and toggle which scopes appear in Settings → Display → Visualizers.
+
 **Library UX + tagging pass — DONE & user-tested 2026-06-15** (two commits). Triggered by
 a Bob Marley *Legend* track showing no auto art. Shipped: (1) **better cover-art lookup** —
 strip edition/disc qualifiers + escape Lucene specials, match on an *exact* release-group
@@ -283,7 +290,7 @@ render, re-homed controls work, nerd toggle reveals/hides Advanced.
   `Library & Tagging` [existing decoder pack, AcoustID key, fpcalc] · `Advanced` [nerd].
 - **No radio node** — discoverability comes from the sidebar entry.
 
-**Phase A and B are both done; next up is Phase C (visualizer overlay).** User-confirmed
+**Phases A, B and C are done; next up is Phase D (internet radio).** User-confirmed
 2026-06-16 that switching to a specific output device reroutes audio *and* the visualizers
 keep working (the `setSinkId`-on-the-AudioContext path holds the whole graph together).
 
@@ -340,6 +347,37 @@ Original design notes for the phase:
   cheapest way to make nerd mode feel drastically more informative at a glance.
 
 ### Phase C — Visualizer overlay (nerd-gated; depends on B)
+
+**DONE & self-verified 2026-06-16 (harness screenshots) — working.** New
+`VisualizerOverlay.tsx`: a full-window modal (reuses the album-art lightbox pattern —
+backdrop / Esc / × to close) with a **stage selector** (tabs) showing **one big visualizer
+at a time**. Four scopes, all reading the existing analyser taps — no new audio-graph nodes:
+**Spectrum** (96-bar log spectrum with per-bar peak-hold + Hz axis), **Spectrogram**
+(scrolling time×freq waterfall — keeps an offscreen history canvas at a fixed internal
+resolution, shifts it left one column per frame and blits it stretched, so the history
+survives window resizes; log-freq labels left, "older / now ▸" on the time axis),
+**Oscilloscope** (L/R `getFloatTimeDomainData` traces), **Goniometer** (vectorscope —
+L/R rotated 45° so mono sits on the vertical *M* axis, side spreads horizontal *S*, with a
+slow persistence fade for the classic glowing blob). All draw on a fixed dark stage
+(`#0b0b0e`) regardless of theme; bar/trace/spectrogram colors derive from the accent via
+`vizColors`.
+- **Each scope owns its rAF loop** (a shared `useStageCanvas` hook in the overlay file;
+  `clear:false` for spectrogram/goniometer so they accumulate). The loop only exists while
+  the scope component is mounted, and the overlay only mounts while open → **nothing renders
+  when it's closed.**
+- **Opens by clicking the top-bar viz widget** (nerd-only, suppressed while the bar is in
+  rearrange mode) — the direct parallel to clicking the art panel → lightbox. Local
+  `vizOpen` state in `TopBar.tsx`; `.viz-expandable` gives it a zoom-in cursor.
+- **Which scopes are offered** is toggled in **Settings → Display → Visualizers** (new
+  nerd-gated sub-tab, `VisualizersPanel`). New `Settings.visualizers: VizScope[]`
+  (`VizScope` + `ALL_VIZ_SCOPES` + `VIZ_SCOPE_LABELS` in `shared/types.ts`), persisted
+  everywhere `nerdMode`/`outputDeviceId` flow; default = all four; the panel keeps ≥1 scope
+  enabled. Last-viewed scope persists in `localStorage` (`vizScope`, mirrors `settingsNode`).
+- **Backlog still open:** adaptive axis-label density (see the Phase B backlog note) applies
+  to the big spectrum's Hz axis and the spectrogram's freq axis too — both currently use the
+  fixed `SPEC_TICKS` set.
+
+Original design notes for the phase:
 
 - An **expandable overlay** reusing the album-art lightbox pattern (`ArtPanel` full-window).
   **Single-select stage** (one big visualizer at a time via tabs/dropdown) — chosen over a
