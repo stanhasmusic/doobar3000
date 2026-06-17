@@ -261,6 +261,18 @@ Build order **A → B → C → D**, each independently shippable and user-testa
 
 ### Phase A — Settings tree (foundation)
 
+**DONE & self-verified 2026-06-16 (commit `ca4a983`), awaiting user test.** The gear
+popup is now `SettingsDialog.tsx` — a two-level tree (nav rail + per-node sub-tabs that
+only appear when a node has >1 visible child). Existing controls re-homed into
+General / Display→Colors / Playback→Leveling / Library & Tagging; `SettingsMenu.tsx` is
+now just the gear button that opens it. New persisted `nerdMode` boolean (in `Settings`,
+main `DEFAULT_SETTINGS`, renderer store) with a plain on/off toggle in General; nerd-gated
+nodes (Advanced now, Output/Visualizers later) are hidden unless it's on. General also has
+an About line (version via new `get-app-version` IPC) and a "Show welcome guide" replay
+(`replayWelcome` flips `seenWelcome` back to false). Last-visited node persists in
+`localStorage` (`settingsNode`). Verified via harness: General/Colors/Advanced panels
+render, re-homed controls work, nerd toggle reveals/hides Advanced.
+
 - **One modal tree dialog replaces the gear popup for everyone** (chosen over keeping the
   popup + a separate tree, to avoid two-places-to-update drift). Opens to last-visited node;
   most-common toggles surface first so it still feels quick.
