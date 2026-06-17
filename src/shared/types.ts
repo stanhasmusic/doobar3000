@@ -58,6 +58,19 @@ export interface Playlist {
   trackPaths: string[]
 }
 
+/** An internet-radio station. NOT a Track — radio is a distinct playback source
+ *  that never enters the library/leveling/column logic (Phase D). `url` is the
+ *  resolved stream URL (radio-browser `url_resolved`); `id` is its uuid. */
+export interface Station {
+  id: string
+  name: string
+  url: string
+  codec: string
+  bitrate: number
+  country: string
+  favicon?: string
+}
+
 /** the rearrangeable widgets in the top bar, in display order */
 export type TopbarWidget = 'logo' | 'transport' | 'nowPlaying' | 'viz' | 'settings' | 'volume'
 

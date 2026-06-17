@@ -10,6 +10,19 @@ export function droppedPaths(e: React.DragEvent): string[] {
     .filter(Boolean)
 }
 
+// D1 SPIKE PLACEHOLDER — replaced by the radio-browser search dialog in Phase D3.
+// A known-good Icecast stream (SomaFM Groove Salad) to prove the radio:// proxy +
+// graph + live visualizers end-to-end. Icecast answers a clean HTTP/1.1 200, so
+// the spike isn't blocked on the "ICY 200 OK" status-line landmine.
+const SPIKE_STATION = {
+  id: 'spike-groovesalad',
+  name: 'SomaFM — Groove Salad',
+  url: 'http://ice1.somafm.com/groovesalad-128-mp3',
+  codec: 'MP3',
+  bitrate: 128,
+  country: 'US'
+}
+
 export function Sidebar() {
   const playlists = useStore((s) => s.playlists)
   const library = useStore((s) => s.library)
@@ -58,6 +71,14 @@ export function Sidebar() {
             onClick={() => setView({ type: 'duplicates' })}
           >
             <span className="side-icon">⧉</span> Duplicates
+          </div>
+          {/* D1 SPIKE PLACEHOLDER — D3 turns this into the radio-browser dialog. */}
+          <div
+            className="side-item"
+            onClick={() => useStore.getState().playStation(SPIKE_STATION)}
+            title="D1 spike: play a test internet-radio stream"
+          >
+            <span className="side-icon">📻</span> Radio (test)
           </div>
         </>
       )}

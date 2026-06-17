@@ -2,6 +2,9 @@ import { app, BrowserWindow, dialog, ipcMain, protocol, shell } from 'electron'
 import { parseFile } from 'music-metadata'
 import { createReadStream } from 'node:fs'
 import { promises as fs } from 'node:fs'
+import http from 'node:http'
+import https from 'node:https'
+import type { IncomingMessage } from 'node:http'
 import path from 'node:path'
 import { Readable } from 'node:stream'
 import { applyAlbumTags, applyTags, downloadFpcalc, findFpcalc, identify } from './acoustid'
@@ -12,9 +15,13 @@ import { scanFolder, scanPaths } from './scanner'
 import * as store from './store'
 import type { Playlist, Settings, TagCandidate, Track } from '../shared/types'
 
-// 'media' serves local audio files to the renderer with Range support (needed for seeking)
+// 'media' serves local audio files to the renderer with Range support (needed for seeking).
+// 'radio' proxies arbitrary internet-radio streams and re-serves them same-origin with an
+// ACAO header (Phase D), so the renderer's crossOrigin <audio> loads them without tainting →
+// the Web Audio graph (VU/spectrum/scopes) keeps working on radio.
 protocol.registerSchemesAsPrivileged([
-  { scheme: 'media', privileges: { supportFetchAPI: true, stream: true, bypassCSP: true } }
+  { scheme: 'media', privileges: { supportFetchAPI: true, stream: true, bypassCSP: true } },
+  { scheme: 'radio', privileges: { supportFetchAPI: true, stream: true, bypassCSP: true } }
 ])
 
 // keep one predictable data folder in dev and production (dev otherwise uses "Electron")
@@ -334,6 +341,33 @@ function registerIpc(): void {
   )
 }
 
+// ── Internet-radio stream proxy (Phase D) ───────────────────────────────────
+// Opens an upstream radio URL with node's (lenient) http/https rather than fetch:
+// some Shoutcast servers answer "ICY 200 OK" instead of "HTTP/1.1 200 OK", which
+// undici/net.request reject. Follows a few redirects. D1 is audio-only — ICY
+// now-playing metadata (Icy-MetaData/icy-metaint byte stripping) lands in D2.
+function openRadioStream(url: string, depth = 0): Promise<IncomingMessage> {
+  return new Promise((resolve, reject) => {
+    if (depth > 4) return reject(new Error('too many redirects'))
+    const mod = url.startsWith('https:') ? https : http
+    const req = mod.get(url, { headers: { 'User-Agent': 'Doobar3000/1.0 (music player)' } }, (res) => {
+      const status = res.statusCode ?? 0
+      const loc = res.headers.location
+      if (status >= 300 && status < 400 && loc) {
+        res.resume() // drain the redirect body
+        openRadioStream(new URL(loc, url).toString(), depth + 1).then(resolve, reject)
+      } else if (status >= 400) {
+        res.resume()
+        reject(new Error(`upstream ${status}`))
+      } else {
+        resolve(res)
+      }
+    })
+    req.on('error', reject)
+    req.setTimeout(15000, () => req.destroy(new Error('radio connect timeout')))
+  })
+}
+
 app.whenReady().then(async () => {
   const MIME: Record<string, string> = {
     '.mp3': 'audio/mpeg',
@@ -384,6 +418,29 @@ app.whenReady().then(async () => {
     headers['Content-Length'] = String(size)
     const stream = Readable.toWeb(createReadStream(filePath))
     return new Response(stream as ReadableStream, { status: 200, headers })
+  })
+
+  // Proxy an internet-radio stream and re-serve it same-origin with ACAO so the
+  // renderer's crossOrigin <audio> can feed it into the Web Audio graph (Phase D).
+  // The upstream URL is the percent-encoded tail of the radio:// URL.
+  protocol.handle('radio', async (request) => {
+    const upstream = decodeURIComponent(request.url.slice('radio://'.length))
+    if (!/^https?:\/\//.test(upstream)) return new Response('bad radio url', { status: 400 })
+    if (process.env.DEBUG_LOG) console.log('[radio]', upstream.slice(0, 120))
+    try {
+      const res = await openRadioStream(upstream)
+      return new Response(Readable.toWeb(res) as ReadableStream, {
+        status: 200,
+        headers: {
+          'Access-Control-Allow-Origin': '*',
+          'Content-Type': res.headers['content-type'] ?? 'audio/mpeg',
+          'Cache-Control': 'no-store'
+        }
+      })
+    } catch (e) {
+      if (process.env.DEBUG_LOG) console.error('[radio] error', e)
+      return new Response('radio stream error', { status: 502 })
+    }
   })
 
   registerIpc()

@@ -8,12 +8,13 @@ import {
   type Playlist,
   type RepeatMode,
   type ScanProgress,
+  type Station,
   type Theme,
   type TopbarWidget,
   type Track,
   type VizScope
 } from '../../shared/types'
-import { audio } from './audio'
+import { audio, toRadioUrl } from './audio'
 import { VIBE_ENABLED } from './smartPlaylists'
 import { applyThemeColors } from './vizColors'
 
@@ -133,6 +134,9 @@ interface State {
   shuffle: boolean
   repeat: RepeatMode
   currentPath: string | null
+  /** the internet-radio station currently playing, if any (Phase D). Mutually
+   *  exclusive with track playback: a station playing means currentPath is null. */
+  currentStation: Station | null
   playing: boolean
   position: number
   volume: number
@@ -207,6 +211,10 @@ interface State {
   selectRange: (paths: string[]) => void
 
   playQueue: (paths: string[], index: number) => void
+  /** start an internet-radio station (stops the track queue) — Phase D */
+  playStation: (station: Station) => void
+  /** stop radio playback entirely (stop = just stop; no queue auto-resume) */
+  stopStation: () => void
   togglePlay: () => void
   next: () => void
   prev: () => void
@@ -320,6 +328,7 @@ export const useStore = create<State>((set, get) => ({
   shuffle: false,
   repeat: 'off',
   currentPath: null,
+  currentStation: null,
   playing: false,
   position: 0,
   volume: 0.8,
@@ -634,6 +643,7 @@ export const useStore = create<State>((set, get) => ({
       // or next/prev step relative to the wrong track.
       orderPos: order.indexOf(index),
       currentPath: paths[index],
+      currentStation: null, // starting a track ends any radio playback
       playbackPath: paths[index],
       playing: true,
       position: 0
@@ -641,8 +651,42 @@ export const useStore = create<State>((set, get) => ({
     applyLeveling()
     audio.load(paths[index], true)
   },
+
+  // Start an internet-radio station. A station is NOT a track: it clears the
+  // now-playing track but keeps the queue intact (idle) so it's still there if
+  // the user later plays a track. Leveling is forced off (no LUFS for a stream);
+  // the bottom bar shows "● LIVE" and the transport degrades (see next/prev/seek).
+  playStation: (station) => {
+    set({
+      currentStation: station,
+      currentPath: null,
+      playbackPath: null,
+      orderPos: -1,
+      playing: true,
+      position: 0
+    })
+    applyLeveling() // station → 0 dB
+    audio.loadUrl(toRadioUrl(station.url), true)
+  },
+  stopStation: () => {
+    if (!get().currentStation) return
+    audio.stop()
+    set({ currentStation: null, playing: false, position: 0 })
+  },
+
   togglePlay: () => {
-    const { playing, currentPath, queue } = get()
+    const { playing, currentPath, currentStation, queue } = get()
+    // Radio: play/pause only (no queue). Pause stops the network read; resume reloads.
+    if (currentStation) {
+      if (playing) {
+        audio.pause()
+        set({ playing: false })
+      } else {
+        audio.loadUrl(toRadioUrl(currentStation.url), true)
+        set({ playing: true })
+      }
+      return
+    }
     if (!currentPath) {
       if (queue.length) get().playQueue(queue, 0)
       return
@@ -655,9 +699,13 @@ export const useStore = create<State>((set, get) => ({
       set({ playing: true })
     }
   },
-  next: () => playAtOrderPos(get().orderPos + 1),
+  next: () => {
+    if (get().currentStation) return // radio has no queue to advance
+    playAtOrderPos(get().orderPos + 1)
+  },
   prev: () => {
-    const { orderPos, position } = get()
+    const { orderPos, position, currentStation } = get()
+    if (currentStation) return // radio: no previous
     if (position > 3 || orderPos <= 0) {
       audio.seek(0)
       set({ position: 0 })
@@ -685,6 +733,7 @@ export const useStore = create<State>((set, get) => ({
     persistSettings()
   },
   seek: (time) => {
+    if (get().currentStation) return // can't seek a live stream
     audio.seek(time)
     set({ position: time })
   },
@@ -766,6 +815,7 @@ function playAtOrderPos(pos: number): void {
     order,
     orderPos: pos,
     currentPath: path,
+    currentStation: null, // advancing the queue ends any radio playback
     playbackPath: path,
     playing: true,
     position: 0
@@ -847,6 +897,13 @@ function pruneQueue(gone: Set<string>): void {
 
 audio.onEnded = () => {
   const s = useStore.getState()
+  // Radio: a live stream "ending" means the connection dropped — stop, don't
+  // wander into the track queue.
+  if (s.currentStation) {
+    s.showNotice(`Radio stream ended — ${s.currentStation.name}`)
+    s.stopStation()
+    return
+  }
   if (s.repeat === 'one') {
     audio.seek(0)
     void audio.play()
@@ -911,6 +968,12 @@ function applyLeveling(): void {
 // session and still fall back to its cached transcode each time.
 audio.onError = () => {
   const st = useStore.getState()
+  // Radio: no transcode fallback / no queue-skip — just report and stop.
+  if (st.currentStation) {
+    st.showNotice(`Can't play station "${st.currentStation.name}".`)
+    st.stopStation()
+    return
+  }
   const orig = st.currentPath
   const failed = trackByPath(st.library, orig)
   if (!orig || !failed) return

@@ -6,6 +6,12 @@ export function toMediaUrl(filePath: string): string {
   return `media://${encodeURIComponent(filePath)}`
 }
 
+// Internet-radio streams play through the main-process proxy (radio://) so they
+// arrive same-origin with ACAO and the Web Audio graph still sees them (Phase D).
+export function toRadioUrl(streamUrl: string): string {
+  return `radio://${encodeURIComponent(streamUrl)}`
+}
+
 const el = new Audio()
 el.crossOrigin = 'anonymous'
 el.preload = 'auto'
@@ -41,6 +47,11 @@ export const audio = {
 
   load(filePath: string, play: boolean): void {
     el.src = toMediaUrl(filePath)
+    if (play) void this.play()
+  },
+  // Load a ready-made URL (e.g. a radio:// proxy URL). Same graph, same crossOrigin.
+  loadUrl(url: string, play: boolean): void {
+    el.src = url
     if (play) void this.play()
   },
   async play(): Promise<void> {

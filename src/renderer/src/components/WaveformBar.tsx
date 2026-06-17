@@ -122,6 +122,18 @@ export function WaveformBar() {
   }
 
   const track = trackByPath(useStore((s) => s.library), currentPath)
+  const station = useStore((s) => s.currentStation)
+
+  // Radio is a live stream — there's nothing to seek. Replace the waveform with a
+  // "● LIVE" indicator (the draw loop above no-ops while the canvas is unmounted).
+  if (station) {
+    return (
+      <div className="waveform-bar waveform-live" title={`${station.name} — live stream`}>
+        <span className="live-dot" />
+        LIVE
+      </div>
+    )
+  }
 
   return (
     <div className="waveform-bar" title={track ? `${track.title} — click to seek` : ''}>

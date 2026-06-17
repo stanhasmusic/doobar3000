@@ -1280,6 +1280,42 @@ body {
   cursor: pointer;
 }
 
+/* Radio: live-stream indicator in place of the seek waveform (Phase D). */
+.waveform-live {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  color: var(--text-dim);
+}
+
+.live-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: live-pulse 1.6s ease-in-out infinite;
+}
+
+.np-live {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+@keyframes live-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
+}
+
 /* ---------- Scrollbars ---------- */
 
 ::-webkit-scrollbar {

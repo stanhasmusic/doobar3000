@@ -228,16 +228,24 @@ prints media-protocol requests and renderer console to the terminal.
 
 ## Where we left off
 
-**Phase C — visualizers.** First cut (full-window modal overlay, commit `ec96358`) →
-**redesigned 2026-06-16** per Stan into a docked panel + floating pop-out windows → after a
-**user test, refined**: the **floating pop-out windows are the keeper** (user-confirmed working,
-incl. multiple at once + theme), the **docked panel is parked** behind `VIZ_PANEL_ENABLED=false`
-(kept intact, like the vibe feature), and the top-bar viz widget now opens a **"Pop out" scope
-menu**. Pop-out header enlarged into a real drag bar. **Built & type-clean; the panel-parked +
-pop-out-menu state is harness-verified** (menu renders, panel gone); the **bigger pop-out drag
-bar still wants a quick live confirm** (a second OS window can't be harness-screenshotted).
-Uncommitted as of this note. **Next up is Phase D — internet radio** (largest single chunk;
-design already written above), independent of A–C.
+**Phase C — visualizers: DONE & committed** (`77be8a5`, redesign; `f798bbf`, backlog notes).
+Floating pop-out windows are the keeper (user-confirmed, incl. multiple at once + theme); the
+docked panel is parked behind `VIZ_PANEL_ENABLED=false`; the top-bar viz widget opens a "Pop out"
+scope menu. (Earlier handoff said "uncommitted" — that was stale; the tree is clean.)
+
+**Phase D — internet radio: STARTED 2026-06-16.** Scoped into D1–D4 tracer-bullet slices (see the
+Phase D "Scope & build order" section below). **D1 (station playback plumbing) is built &
+type-clean, uncommitted, pending a live test** — the harness can't drive real audio/network. D1
+added: `radio://` proxy (`src/main/index.ts` — re-serves an upstream stream same-origin with ACAO
+so the Web Audio graph keeps working on radio; `openRadioStream` uses node `http`/`https`, audio
+only, no ICY yet), `Station` type, `currentStation` + `playStation`/`stopStation` in the renderer
+store (degraded transport: next/prev/seek no-op, leveling forced to 0 dB, onEnded/onError don't
+fall into the queue), `audio.loadUrl`/`toRadioUrl`, a "● LIVE" `WaveformBar`, a station now-playing
+branch in `TopBar`, and a **temporary "Radio (test)" sidebar entry** (D1 SPIKE PLACEHOLDER → SomaFM
+Groove Salad; D3 replaces it with the radio-browser dialog). **Live test to run:** click *Radio
+(test)* in the sidebar — audio should play, the VU/spectrum should stay live (proves the proxy
+keeps the stream same-origin), the bottom bar should read ● LIVE, and the transport should
+play/pause but not seek/skip.
 
 **Library UX + tagging pass — DONE & user-tested 2026-06-15** (two commits). Triggered by
 a Bob Marley *Legend* track showing no auto art. Shipped: (1) **better cover-art lookup** —
@@ -485,3 +493,52 @@ Original design notes for the phase:
   radio-browser uuid); a star/add action on a search row saves it.
 - **Out of scope:** library integration (not in columns / analysis / smart playlists), stream
   recording/ripping, and auto-resume of the prior queue when radio stops (**stop = just stop**).
+
+#### Scope & build order (2026-06-16) — grounded in the current code
+
+**Risk is concentrated in the `radio://` proxy; everything else is plumbing we've done before.**
+The proxy is `media://`'s inverted sibling: `media://` (`src/main/index.ts`) streams local files
+*from* disk; `radio://` `fetch`es an arbitrary upstream URL and *re-serves it same-origin with an
+`ACAO` header* so the renderer's `<audio crossOrigin='anonymous'>` loads it without tainting →
+the whole Web Audio graph (VU/spectrum/scopes) keeps working on radio. Three landmines inside it,
+worst first: (1) **ICY status line** — many stations answer `ICY 200 OK`, not `HTTP/1.1 200 OK`,
+which `undici`/`net.request` can reject → hit the upstream with node's lenient `http`/`https`, not
+`fetch`; (2) **inline ICY metadata bytes** — with `Icy-MetaData: 1` the server interleaves a block
+every `icy-metaint` bytes that Chromium can't digest → strip them out before forwarding, parse
+`StreamTitle` from them; (3) **playlist/HLS URLs** — `.pls`/`.m3u` are resolved by radio-browser's
+`url_resolved`, but **HLS `.m3u8` won't play through one proxied stream → filter those out at
+search time**. Decision: **hand-roll the ICY demux** (~40 lines over node `https`) rather than add
+the pure-JS `icy` dep — keeps the zero-native, lean-dep ethos.
+
+Built as tracer-bullet slices, each independently shippable/testable:
+
+- **D1 — Station playback plumbing (the tracer bullet).** Proves proxy + graph + viz-stays-live
+  end-to-end against one hardcoded stream. `radio://` scheme (privileged, like `media://`) +
+  `protocol.handle('radio', …)` proxy (audio only, no ICY yet); `Station` type in
+  `shared/types.ts`; `currentStation: Station | null` in the renderer store; `audio.loadUrl` +
+  `toRadioUrl`; a `playStation` action that stops the queue and loads the proxy URL; **transport
+  degraded** (next/prev/seek/shuffle/repeat no-op while a station plays; `onEnded`/`onError` must
+  NOT fall into `playAtOrderPos`/`next()`); **leveling forced to 0 dB** for radio; `WaveformBar`
+  shows a **"● LIVE"** indicator; `TopBar` now-playing shows the station name. No new IPC (the
+  proxy is reached purely by the element loading a `radio://` URL).
+- **D2 — ICY now-playing metadata.** Add `Icy-MetaData: 1` handling to the proxy (strip bytes,
+  parse `StreamTitle`), push the title over a new IPC channel; now-playing + nerd format chip read
+  it when a station is playing.
+- **D3 — radio-browser client + browse dialog.** New `src/main/radio.ts` (mirrors
+  `art.ts`/`acoustid.ts`: descriptive `User-Agent`, round-robin a host from
+  `all.api.radio-browser.info`) + search IPC. **Sidebar "Radio" entry** (next to Duplicates) opens
+  a **modal dialog**: Search (name/tag/country) + Known Stations tabs, columns
+  Name/Codec/Bitrate/Votes/Country reusing `DuplicatesView`/`TrackList` styling. (D3 replaces D1's
+  hardcoded test station with "play from a row".)
+- **D4 — Favorites.** New `radio.json` sibling via the existing `readJson`/`writeJson` pattern
+  (`src/main/store.ts`) + `get/saveRadioFavorites` IPC; star action on a search row; Known Stations
+  tab lists favorites.
+
+**Files touched:** `shared/types.ts` · `main/index.ts` (proxy) · new `main/radio.ts` ·
+`main/store.ts` (radio.json) · `preload/index.ts` (D2+ IPC) · `renderer/store.ts`
+(currentStation, degraded transport, leveling/onEnded/onError guards) · `renderer/audio.ts`
+(loadUrl) · new `RadioDialog.tsx` · `Sidebar.tsx` · `TopBar.tsx` · `WaveformBar.tsx`.
+
+**v1 codec scope:** MP3/AAC direct streams; HLS `.m3u8` filtered out (needs a different player
+path). **Test stream for the D1 spike:** SomaFM Groove Salad (Icecast → clean `HTTP/1.1`, so the
+spike isn't blocked on the ICY-status-line landmine).

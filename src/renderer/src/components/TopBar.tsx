@@ -48,6 +48,7 @@ interface Drag {
 export function TopBar() {
   const playing = useStore((s) => s.playing)
   const currentPath = useStore((s) => s.currentPath)
+  const station = useStore((s) => s.currentStation)
   const position = useStore((s) => s.position)
   const volume = useStore((s) => s.volume)
   const library = useStore((s) => s.library)
@@ -146,7 +147,21 @@ export function TopBar() {
     ),
     nowPlaying: (
       <div className="now-playing">
-        {track ? (
+        {station ? (
+          // Radio: station name + a LIVE marker. The current-song (ICY) title
+          // lands in Phase D2; for now the sub-line is the stream's codec/bitrate.
+          <>
+            <div className="np-title">{station.name}</div>
+            <div className="np-sub">
+              {[station.codec?.toUpperCase(), station.bitrate ? `${station.bitrate}kbps` : '']
+                .filter(Boolean)
+                .join(' · ') || 'Internet radio'}
+            </div>
+            <div className="np-time">
+              <span className="np-live">● LIVE</span>
+            </div>
+          </>
+        ) : track ? (
           <>
             <div className="np-title">{track.title}</div>
             <div className="np-sub">
