@@ -147,13 +147,13 @@ export function VuMeter() {
       g.font = '9px system-ui, sans-serif'
       g.fillStyle = vizColors.faint
       g.textBaseline = 'bottom'
+      g.textAlign = 'right'
       for (const db of VU_TICKS) {
-        const x = vuFrac(db) * w
-        g.fillRect(Math.min(x, w - 1), head + span, 1, 3)
-        // the 0 tick is right-aligned at the edge — inset it off the right border;
-        // every label sits a hair above the bottom border so none kiss the edge
-        g.textAlign = db === 0 ? 'right' : 'center'
-        g.fillText(String(db), db === 0 ? w - PAD : Math.min(x, w - 1), h - 1)
+        const x = Math.min(vuFrac(db) * w, w - 1)
+        g.fillRect(x, head + span, 1, 3)
+        // each number sits just left of its tick mark (right-aligned) so the mark
+        // never crosses the digits; the baseline is a hair above the bottom border
+        g.fillText(String(db), x - 2, h - 1)
       }
       // live peak readout (louder of L/R), top-right — inset from the corner
       g.textBaseline = 'top'

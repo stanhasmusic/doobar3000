@@ -372,9 +372,10 @@ treatment for its time/freq axes.
    widget edges, and every dB label sits a hair (1px) above the bottom border so none kiss the
    boundary lines. Insetting `0` first collided it with the `-6` mark (the linear 48 dB scale
    crowds toward the right), so `VU_TICKS` dropped to `-24 / -12 / 0` to stay legible at the
-   narrow top-bar width, and the top/bottom strips grew 10/11→13px for breathing room. The
-   denser, width-adaptive tick set is still item-1's sibling backlog (adaptive axis density).
-   `Visualizers.tsx` VU draw only, no data change.
+   narrow top-bar width, and the top/bottom strips grew 10/11→13px for breathing room. Each
+   number is right-aligned just left of its tick mark (the `|` was overlapping the digits when
+   centered on the same x). The denser, width-adaptive tick set is still item-1's sibling
+   backlog (adaptive axis density). `Visualizers.tsx` VU draw only, no data change.
 
 ### Phase B — Nerd mode core (depends on A)
 
