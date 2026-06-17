@@ -153,8 +153,8 @@ function NodeContent({
       return (
         <p className="set-hint">
           Advanced diagnostics will appear here as Nerd Mode features land. Output and format
-          details live under Playback → Output; the expandable visualizer overlay is under
-          Display → Visualizers (and opens from the top-bar viz widget).
+          details live under Playback → Output; the floating visualizer pop-outs are under
+          Display → Visualizers (click the top-bar viz widget to pop one out).
         </p>
       )
   }
@@ -289,8 +289,8 @@ function VisualizersPanel(): React.ReactNode {
         })}
       </div>
       <div className="set-hint">
-        Pick which scopes the expandable visualizer overlay offers. Open it by clicking the
-        spectrum/VU widget in the top bar (nerd mode).
+        Pick which scopes are available. Click the spectrum/VU widget in the top bar (nerd mode)
+        to pop a scope into its own floating, always-on-top window — open as many as you like.
       </div>
     </>
   )

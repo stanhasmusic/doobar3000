@@ -6,7 +6,9 @@ import type {
   ScanProgress,
   Settings,
   TagCandidate,
-  Track
+  Track,
+  VizFrame,
+  VizScope
 } from '../shared/types'
 
 const api = {
@@ -78,6 +80,24 @@ const api = {
   onVibeProgress: (cb: (p: ScanProgress) => void): void => {
     ipcRenderer.on('vibe-progress', (_e, p: ScanProgress) => cb(p))
   },
+  // ── Visualizer pop-out windows (Phase C) ──────────────────────────────────
+  // Open a floating window for a scope (main process creates the BrowserWindow).
+  openVizPopout: (scope: VizScope): Promise<void> => ipcRenderer.invoke('viz-popout-open', scope),
+  // Main window → main process: one analyser frame to broadcast to pop-outs.
+  sendVizFrame: (frame: VizFrame): void => ipcRenderer.send('viz-frame', frame),
+  // Main process → main window: start/stop producing frames (a pop-out opened/closed).
+  onVizFeed: (cb: (active: boolean) => void): void => {
+    ipcRenderer.on('viz-feed', (_e, active: boolean) => cb(active))
+  },
+  // Main process → pop-out window: the latest analyser frame to render.
+  onVizFrame: (cb: (frame: VizFrame) => void): void => {
+    ipcRenderer.on('viz-frame', (_e, frame: VizFrame) => cb(frame))
+  },
+  // The scope a pop-out window was opened for (from its URL hash, e.g. #popout=spectrum).
+  popoutScope: ((): VizScope | null => {
+    const m = window.location.hash.match(/popout=(\w+)/)
+    return m ? (m[1] as VizScope) : null
+  })(),
   flags: {
     autoplay: process.env.DEV_AUTOPLAY === '1',
     seek: Number(process.env.DEV_SEEK ?? 0)

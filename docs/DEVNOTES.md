@@ -228,12 +228,16 @@ prints media-protocol requests and renderer console to the terminal.
 
 ## Where we left off
 
-**Phase C — visualizer overlay: DONE & self-verified 2026-06-16** (harness screenshots of
-all four scopes — spectrum/spectrogram/oscilloscope/goniometer rendering live audio with the
-midnight accent). Built on the now-complete Nerd-mode A→B→C arc. **Next up is Phase D —
-internet radio** (the largest single chunk; design already written above), independent of
-A–C. Worth a real-world try when convenient: open the overlay (nerd mode → click the top-bar
-viz widget), flip scopes, and toggle which scopes appear in Settings → Display → Visualizers.
+**Phase C — visualizers.** First cut (full-window modal overlay, commit `ec96358`) →
+**redesigned 2026-06-16** per Stan into a docked panel + floating pop-out windows → after a
+**user test, refined**: the **floating pop-out windows are the keeper** (user-confirmed working,
+incl. multiple at once + theme), the **docked panel is parked** behind `VIZ_PANEL_ENABLED=false`
+(kept intact, like the vibe feature), and the top-bar viz widget now opens a **"Pop out" scope
+menu**. Pop-out header enlarged into a real drag bar. **Built & type-clean; the panel-parked +
+pop-out-menu state is harness-verified** (menu renders, panel gone); the **bigger pop-out drag
+bar still wants a quick live confirm** (a second OS window can't be harness-screenshotted).
+Uncommitted as of this note. **Next up is Phase D — internet radio** (largest single chunk;
+design already written above), independent of A–C.
 
 **Library UX + tagging pass — DONE & user-tested 2026-06-15** (two commits). Triggered by
 a Bob Marley *Legend* track showing no auto art. Shipped: (1) **better cover-art lookup** —
@@ -346,12 +350,59 @@ Original design notes for the phase:
 - **Format chip** near now-playing, **nerd-only** (e.g. `FLAC 44.1/16 → 48k shared`) — the
   cheapest way to make nerd mode feel drastically more informative at a glance.
 
-### Phase C — Visualizer overlay (nerd-gated; depends on B)
+### Phase C — Visualizers (nerd-gated; depends on B)
 
-**DONE & self-verified 2026-06-16 (harness screenshots) — working.** New
-`VisualizerOverlay.tsx`: a full-window modal (reuses the album-art lightbox pattern —
-backdrop / Esc / × to close) with a **stage selector** (tabs) showing **one big visualizer
-at a time**. Four scopes, all reading the existing analyser taps — no new audio-graph nodes:
+**REDESIGNED 2026-06-16 (pending user test).** The first cut shipped a full-window modal
+overlay; Stan disliked that it *covered the app / sent it to the background*. Replaced with
+**two non-modal presentations that share one renderer**: an in-app **docked side panel** and
+**floating pop-out windows**. The four scopes and their draw code are unchanged — only the
+container changed.
+
+- **Shared renderer** (`VizScopes.tsx`): the four scopes are now pure draw functions over a
+  `VizSource` abstraction (`getFrequencyData` / `getTimeDomainData` / `sampleRate` …), plus a
+  `<VizCanvas scope source />` that owns the rAF loop (keyed by scope so switching remounts
+  with the right per-scope state + clear/no-clear). The module imports **no `audio`/`store`**
+  so the pop-out window can use it without spinning up a second AudioContext. Colors moved to
+  a standalone `vizColors.ts` (`applyThemeColors` + `vizColors` + `refreshVizColors`), kept
+  audio-free for the same reason; `store.ts` re-exports `vizColors` for existing importers and
+  `applyTheme` now wraps `applyThemeColors` + the titlebar tint.
+- **Docked panel** (`VizPanel.tsx`) — **PARKED 2026-06-16 (Stan's call):** the pop-outs are the
+  keeper; the docked panel is parked behind `export const VIZ_PANEL_ENABLED = false`, exactly
+  like `VIBE_ENABLED` — code intact, never renders, flip to `true` to restore. It sits at the
+  right of the track list in `.middle`, has a scope `<select>`, a left-edge resize handle
+  (`vizPanelWidth`, persisted, clamped 220–720), a ⇱ pop-out button and a × close, and is fed by
+  `liveSource`. (`vizPanelOpen` is its ephemeral toggle.)
+- **Top-bar viz widget**: nerd-mode click → when the panel is parked (default) it opens a small
+  **"Pop out visualizer" menu** listing the enabled scopes (each ⇱ floats that scope into its own
+  window); when `VIZ_PANEL_ENABLED` is true it toggles the docked panel instead.
+- **Pop-out windows**: frameless, always-on-top `BrowserWindow`s created in the **main
+  process** (renderer can't — `setWindowOpenHandler` denies it). They load the same bundle with
+  a `#popout=<scope>` hash; `main.tsx` **dynamically** imports `Popout.tsx` (not `App`) for
+  those, so the audio graph never loads there. The pop-out has no audio — the main window runs
+  a `requestAnimationFrame` **feed bridge** (`startVizFeedBridge` in `liveSource.ts`) that reads
+  the analysers and ships a `VizFrame` (freq + L/R time-domain + sampleRate) over IPC; main
+  broadcasts it to every open pop-out. The feed only runs while ≥1 pop-out is open (main tells
+  the renderer via `viz-feed` on open/close). Multiple pop-outs allowed; each has its own scope
+  selector. Pop-outs apply the app's theme on load (`getSettings` → `applyThemeColors`). The
+  frameless window's **header is its drag handle**: a compact scope picker on the left, then a
+  tall grabbable strip filling the rest — the picker had been eating the whole header, leaving
+  nothing to drag (Stan, fixed 2026-06-16). That strip shows the **now-playing track title**
+  (falls back to "Doobar 3000" when idle) — the title rides along on the `VizFrame` feed
+  (`liveSource` reads it from the store each tick); `setTitle` bails when unchanged so the header
+  only re-renders on track changes.
+- New IPC: `viz-popout-open` (invoke), `viz-frame` (renderer→main→broadcast), `viz-feed`
+  (main→main-window). New settings: `vizScope`, `vizPanelWidth` (the `visualizers` enabled-set
+  still gates which scopes the selector offers). The old `VisualizerOverlay.tsx` was deleted.
+- **Self-check:** type-clean (only the pre-existing `music-metadata` errors) and builds with
+  correct code-splitting (`Popout`/`VizScopes` are separate chunks from `App`). A clean harness
+  screenshot was blocked by a running instance holding the userData dir — **needs a real
+  relaunch + user test** (panel toggle, resize, pop-out onto a second monitor).
+
+#### Original first-cut overlay (replaced)
+
+New `VisualizerOverlay.tsx` (now deleted): a full-window modal (reuses the album-art lightbox
+pattern — backdrop / Esc / × to close) with a **stage selector** (tabs) showing **one big
+visualizer at a time**. Four scopes, all reading the existing analyser taps — no new audio-graph nodes:
 **Spectrum** (96-bar log spectrum with per-bar peak-hold + Hz axis), **Spectrogram**
 (scrolling time×freq waterfall — keeps an offscreen history canvas at a fixed internal
 resolution, shifts it left one column per frame and blits it stretched, so the history

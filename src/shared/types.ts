@@ -42,6 +42,16 @@ export const VIZ_SCOPE_LABELS: Record<VizScope, string> = {
   goniometer: 'Goniometer'
 }
 
+/** one analyser frame shipped from the main window to the pop-out viz windows */
+export interface VizFrame {
+  freq: Uint8Array
+  timeL: Float32Array
+  timeR: Float32Array
+  sampleRate: number
+  /** now-playing track title, shown in the pop-out header ('' when idle) */
+  title: string
+}
+
 export interface Playlist {
   id: string
   name: string
@@ -101,6 +111,10 @@ export interface Settings {
   /** which big visualizers the nerd-mode overlay offers (Display → Visualizers).
    *  Order is display order in the stage selector. */
   visualizers: VizScope[]
+  /** last-selected scope in the docked viz panel / pop-outs */
+  vizScope: VizScope
+  /** width (px) of the docked visualizer side panel */
+  vizPanelWidth: number
 }
 
 /** one tag proposal from an AcoustID/MusicBrainz lookup */

@@ -3,8 +3,10 @@ import { DuplicatesView } from './components/DuplicatesView'
 import { Sidebar } from './components/Sidebar'
 import { TopBar } from './components/TopBar'
 import { TrackList } from './components/TrackList'
+import { VizPanel } from './components/VizPanel'
 import { WaveformBar } from './components/WaveformBar'
 import { WelcomeDialog } from './components/WelcomeDialog'
+import { startVizFeedBridge } from './liveSource'
 import { useStore } from './store'
 
 // React StrictMode double-mounts in dev; init must run exactly once
@@ -24,6 +26,7 @@ export function App() {
   useEffect(() => {
     if (initRan) return
     initRan = true
+    startVizFeedBridge() // feed analyser frames to pop-out windows while any are open
     void useStore
       .getState()
       .init()
@@ -72,6 +75,7 @@ export function App() {
       <div className="middle">
         <Sidebar />
         <Content />
+        <VizPanel />
       </div>
       <WaveformBar />
       <Welcome />

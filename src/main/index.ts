@@ -83,7 +83,55 @@ function createWindow(): void {
   }
 }
 
+// ── Visualizer pop-out windows (Phase C) ────────────────────────────────────
+// Frameless, always-on-top floating windows, each rendering one scope. They have
+// no audio of their own — the main window ships analyser frames over IPC, which we
+// broadcast here. The frame feed only runs while ≥1 pop-out is open.
+const popouts = new Set<BrowserWindow>()
+
+function createPopout(scope: string): void {
+  const pop = new BrowserWindow({
+    width: 480,
+    height: 320,
+    minWidth: 220,
+    minHeight: 150,
+    frame: false,
+    alwaysOnTop: true,
+    backgroundColor: '#0b0b0e',
+    webPreferences: {
+      preload: path.join(__dirname, '../preload/index.js'),
+      contextIsolation: true,
+      sandbox: true
+    }
+  })
+  pop.setMenuBarVisibility(false)
+  pop.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+  pop.webContents.on('will-navigate', (e, url) => {
+    const ownOrigin = process.env.ELECTRON_RENDERER_URL ?? 'file://'
+    if (!url.startsWith(ownOrigin)) e.preventDefault()
+  })
+
+  if (process.env.ELECTRON_RENDERER_URL) {
+    pop.loadURL(`${process.env.ELECTRON_RENDERER_URL}#popout=${scope}`)
+  } else {
+    pop.loadFile(path.join(__dirname, '../renderer/index.html'), { hash: `popout=${scope}` })
+  }
+
+  popouts.add(pop)
+  if (popouts.size === 1) win?.webContents.send('viz-feed', true) // first pop-out → start feed
+  pop.on('closed', () => {
+    popouts.delete(pop)
+    if (popouts.size === 0) win?.webContents.send('viz-feed', false) // last closed → stop feed
+  })
+}
+
 function registerIpc(): void {
+  ipcMain.handle('viz-popout-open', (_e, scope: string) => createPopout(scope))
+  // Main window pushes a frame → fan out to every open pop-out.
+  ipcMain.on('viz-frame', (_e, frame) => {
+    for (const pop of popouts) pop.webContents.send('viz-frame', frame)
+  })
+
   ipcMain.handle('select-folder', async () => {
     const result = await dialog.showOpenDialog(win!, { properties: ['openDirectory'] })
     return result.canceled ? null : result.filePaths[0]

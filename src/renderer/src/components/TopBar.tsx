@@ -1,10 +1,15 @@
 import { useEffect, useState } from 'react'
-import type { TopbarWidget } from '../../../shared/types'
+import {
+  ALL_VIZ_SCOPES,
+  VIZ_SCOPE_LABELS,
+  type TopbarWidget,
+  type VizScope
+} from '../../../shared/types'
 import { formatChip, formatTime, trackByPath, useStore } from '../store'
 import { LogoMark } from './LogoMark'
 import { SettingsMenu } from './SettingsMenu'
 import { Spectrum, VuMeter } from './Visualizers'
-import { VisualizerOverlay } from './VisualizerOverlay'
+import { VIZ_PANEL_ENABLED } from './VizPanel'
 import { clampToViewport } from '../clampMenu'
 
 const Icon = ({ d, size = 16 }: { d: string; size?: number }) => (
@@ -50,12 +55,24 @@ export function TopBar() {
   const repeat = useStore((s) => s.repeat)
   const layout = useStore((s) => s.topbarLayout)
   const nerdMode = useStore((s) => s.nerdMode)
+  const visualizers = useStore((s) => s.visualizers)
   const { togglePlay, next, prev, setVolume, toggleShuffle, cycleRepeat } = useStore.getState()
 
   const [arranging, setArranging] = useState(false)
   const [drag, setDrag] = useState<Drag | null>(null)
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null)
-  const [vizOpen, setVizOpen] = useState(false)
+  const [vizMenu, setVizMenu] = useState<{ x: number; y: number } | null>(null)
+
+  // Clicking the viz widget either toggles the docked panel (if enabled) or opens
+  // a menu to pop a scope into its own window (the panel is parked by default).
+  const onVizClick = (e: React.MouseEvent): void => {
+    if (VIZ_PANEL_ENABLED) {
+      useStore.getState().toggleVizPanel()
+      return
+    }
+    e.stopPropagation() // don't let this click immediately dismiss the menu
+    setVizMenu({ x: e.clientX, y: e.clientY })
+  }
 
   const track = trackByPath(library, currentPath)
 
@@ -66,6 +83,14 @@ export function TopBar() {
     window.addEventListener('click', close)
     return () => window.removeEventListener('click', close)
   }, [menu])
+
+  // Same for the viz pop-out menu.
+  useEffect(() => {
+    if (!vizMenu) return
+    const close = () => setVizMenu(null)
+    window.addEventListener('click', close)
+    return () => window.removeEventListener('click', close)
+  }, [vizMenu])
 
   // Esc leaves rearrange mode (so does the Done pill / clicking outside the bar).
   // Click-away uses pointerdown so it never fires mid-drag (a widget drag starts
@@ -144,8 +169,14 @@ export function TopBar() {
     viz: (
       <div
         className={`viz ${nerdMode && !arranging ? 'viz-expandable' : ''}`}
-        onClick={nerdMode && !arranging ? () => setVizOpen(true) : undefined}
-        title={nerdMode && !arranging ? 'Expand visualizers' : undefined}
+        onClick={nerdMode && !arranging ? onVizClick : undefined}
+        title={
+          nerdMode && !arranging
+            ? VIZ_PANEL_ENABLED
+              ? 'Toggle visualizer panel'
+              : 'Pop out a visualizer'
+            : undefined
+        }
       >
         <Spectrum />
         <VuMeter />
@@ -247,7 +278,23 @@ export function TopBar() {
         </div>
       )}
 
-      {vizOpen && nerdMode && <VisualizerOverlay onClose={() => setVizOpen(false)} />}
+      {vizMenu && (
+        <div ref={clampToViewport} className="context-menu" style={{ left: vizMenu.x, top: vizMenu.y }}>
+          <div className="menu-head">Pop out visualizer</div>
+          {ALL_VIZ_SCOPES.filter((s) => visualizers.includes(s)).map((s) => (
+            <div
+              key={s}
+              className="menu-item"
+              onClick={() => {
+                void window.api.openVizPopout(s as VizScope)
+                setVizMenu(null)
+              }}
+            >
+              ⇱ {VIZ_SCOPE_LABELS[s]}
+            </div>
+          ))}
+        </div>
+      )}
 
       {menu && (
         <div ref={clampToViewport} className="context-menu" style={{ left: menu.x, top: menu.y }}>

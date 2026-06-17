@@ -70,7 +70,9 @@ const DEFAULT_SETTINGS: Settings = {
   seenWelcome: false,
   nerdMode: false,
   outputDeviceId: '',
-  visualizers: ALL_VIZ_SCOPES
+  visualizers: ALL_VIZ_SCOPES,
+  vizScope: 'spectrum',
+  vizPanelWidth: 360
 }
 export const getSettings = async (): Promise<Settings> => ({
   ...DEFAULT_SETTINGS,

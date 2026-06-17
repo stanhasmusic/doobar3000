@@ -1727,97 +1727,147 @@ body {
   border-color: var(--accent);
 }
 
-/* ── Phase C: visualizer overlay ─────────────────────────────────────────── */
+/* ── Phase C: visualizers (docked panel + pop-out windows) ───────────────────── */
 
-/* the top-bar viz widget becomes clickable (→ overlay) in nerd mode. The top bar
-   is a window drag region (-webkit-app-region: drag), which otherwise eats the
-   click before onClick can fire — so opt this strip out of dragging when it's the
-   overlay trigger. */
+/* the top-bar viz widget toggles the docked panel in nerd mode. The top bar is a
+   window drag region (-webkit-app-region: drag), which otherwise eats the click
+   before onClick can fire — so opt this strip out of dragging when it's the trigger. */
 .viz-expandable {
-  cursor: zoom-in;
+  cursor: pointer;
   -webkit-app-region: no-drag;
 }
 
-.viz-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 120; /* above the art lightbox (100) and settings modal (200 is higher,
-                   but the overlay opens from the bar, not over settings) */
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(0, 0, 0, 0.82);
-  -webkit-app-region: no-drag;
-}
-
-.viz-overlay-inner {
-  width: min(88vw, 1100px);
-  height: min(80vh, 680px);
+/* docked panel — sits on the right of the track list, never covers the app */
+.viz-panel {
+  position: relative;
+  flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  border-radius: 12px;
-  overflow: hidden;
-  border: 1px solid var(--border);
-  box-shadow: 0 16px 60px rgba(0, 0, 0, 0.6);
+  min-width: 0;
+  background: #0b0b0e;
+  border-left: 1px solid var(--border);
 }
 
-.viz-overlay-head {
+.viz-panel-resize {
+  position: absolute;
+  left: -3px;
+  top: 0;
+  bottom: 0;
+  width: 7px;
+  cursor: ew-resize;
+  z-index: 2;
+}
+
+.viz-panel-head {
   flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 10px 12px;
+  gap: 8px;
+  padding: 7px 8px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-.viz-tabs {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.viz-tabs button {
-  padding: 5px 14px;
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  border-radius: 999px;
-  background: transparent;
-  color: rgba(255, 255, 255, 0.65);
+.viz-panel-select {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 6px;
+  border-radius: 6px;
+  background: var(--bg-raised);
+  color: var(--text);
+  border: 1px solid var(--border);
   font: inherit;
-  font-size: 13px;
-  cursor: pointer;
+  font-size: 12.5px;
 }
 
-.viz-tabs button:hover {
-  color: #fff;
-  border-color: rgba(255, 255, 255, 0.32);
-}
-
-.viz-tabs button.on {
-  background: var(--accent);
-  border-color: transparent;
-  color: #fff;
-}
-
-.viz-overlay-close {
+.viz-panel-actions {
+  display: flex;
+  gap: 4px;
   flex-shrink: 0;
-  width: 28px;
-  height: 28px;
+}
+
+.viz-panel-btn {
+  width: 26px;
+  height: 26px;
   border: none;
   border-radius: 6px;
   background: transparent;
   color: rgba(255, 255, 255, 0.6);
-  font-size: 20px;
+  font-size: 16px;
   line-height: 1;
   cursor: pointer;
 }
 
-.viz-overlay-close:hover {
+.viz-panel-btn:hover:not(:disabled) {
   background: rgba(255, 255, 255, 0.1);
   color: #fff;
 }
 
-.viz-stage {
+.viz-panel-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.viz-panel-stage {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+}
+
+/* a frameless pop-out window: header drag strip + full-bleed canvas */
+.popout {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  background: #0b0b0e;
+}
+
+.popout-head {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 38px;
+  padding: 5px 6px 5px 8px;
+  background: rgba(255, 255, 255, 0.04);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  -webkit-app-region: drag; /* drag the frameless window by its header */
+}
+
+.popout-head .viz-panel-select,
+.popout-head .viz-panel-btn {
+  -webkit-app-region: no-drag; /* but keep the controls clickable */
+}
+
+/* compact scope picker on the left so the rest of the header is grabbable */
+.popout-select {
+  flex: 0 1 auto;
+  width: 150px;
+}
+
+/* the big draggable grab strip filling the header between the picker and × */
+.popout-drag {
+  flex: 1;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: grab;
+}
+
+.popout-title {
+  max-width: 100%;
+  padding: 0 8px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 12px;
+  color: var(--text-dim);
+  user-select: none;
+}
+
+.popout-stage {
   flex: 1;
   min-height: 0;
   position: relative;
@@ -1835,10 +1885,10 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 0 40px;
+  padding: 0 24px;
   text-align: center;
   color: rgba(255, 255, 255, 0.55);
-  font-size: 14px;
+  font-size: 13px;
 }
 
 /* Display → Visualizers settings panel */

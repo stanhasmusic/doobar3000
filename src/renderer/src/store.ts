@@ -15,69 +15,21 @@ import {
 } from '../../shared/types'
 import { audio } from './audio'
 import { VIBE_ENABLED } from './smartPlaylists'
+import { applyThemeColors } from './vizColors'
 
-// Themes are driven by CSS variables; presets live in styles.css under
-// `:root[data-theme='…']`. 'custom' reuses the dark base and overrides the
-// accent vars inline from a user-picked hex color.
-const HEX = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i
-function hexToRgba(hex: string, alpha: number): string {
-  let h = hex.slice(1)
-  if (h.length === 3) h = h.replace(/./g, (c) => c + c)
-  const n = parseInt(h, 16)
-  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`
-}
+// Theme colors + the canvas-viz color snapshot live in ./vizColors (kept free of
+// audio/store imports so pop-out windows can reuse them). vizColors is re-exported
+// here for the components that already import it from the store.
+export { vizColors, refreshVizColors } from './vizColors'
+
 export function applyTheme(theme: Theme, accentColor: string): void {
-  const root = document.documentElement
-  root.dataset.theme = theme === 'custom' ? 'dark' : theme
-  const accentVars = ['--accent', '--accent-hover', '--accent-soft'] as const
-  if (theme === 'custom' && HEX.test(accentColor)) {
-    root.style.setProperty('--accent', accentColor)
-    root.style.setProperty('--accent-hover', accentColor)
-    root.style.setProperty('--accent-soft', hexToRgba(accentColor, 0.16))
-  } else {
-    for (const v of accentVars) root.style.removeProperty(v)
-  }
-  refreshVizColors()
+  applyThemeColors(theme, accentColor)
   // Tint the native Windows caption-button strip to match the top bar so the
   // min/max/close buttons read as part of the bar instead of a separate region.
-  const cs = getComputedStyle(root)
+  const cs = getComputedStyle(document.documentElement)
   const color = cs.getPropertyValue('--topbar-top').trim() || '#1a1a1f'
   const symbolColor = cs.getPropertyValue('--text-dim').trim() || '#9a9aa5'
   void window.api?.setTitleBarOverlay?.({ color, symbolColor })
-}
-
-// Canvas visualizers (spectrum, waveform, VU) can't read CSS vars directly, so we
-// snapshot the active theme's colors here and refresh on every theme change.
-// Spectrum/waveform tones derive from the accent so a Custom accent flows through too.
-export const vizColors = {
-  accent: '#e0556e',
-  accentLight: '#ff9aa8',
-  accentDark: '#8a3b50',
-  text: '#e8e8ec',
-  faint: '#45454e',
-  track: '#2a2a31'
-}
-const readVar = (name: string): string =>
-  getComputedStyle(document.documentElement).getPropertyValue(name).trim()
-function toRgb(hex: string): [number, number, number] {
-  let h = hex.replace('#', '')
-  if (h.length === 3) h = h.replace(/./g, (c) => c + c)
-  const n = parseInt(h, 16)
-  return [(n >> 16) & 255, (n >> 8) & 255, n & 255]
-}
-function mix(c: [number, number, number], t: [number, number, number], k: number): string {
-  const m = (a: number, b: number): number => Math.round(a + (b - a) * k)
-  return `rgb(${m(c[0], t[0])}, ${m(c[1], t[1])}, ${m(c[2], t[2])})`
-}
-export function refreshVizColors(): void {
-  const accent = readVar('--accent') || '#e0556e'
-  const rgb = toRgb(accent)
-  vizColors.accent = accent
-  vizColors.accentLight = mix(rgb, [255, 255, 255], 0.45)
-  vizColors.accentDark = mix(rgb, [0, 0, 0], 0.4)
-  vizColors.text = readVar('--text') || '#e8e8ec'
-  vizColors.faint = readVar('--text-faint') || '#45454e'
-  vizColors.track = readVar('--border') || '#2a2a31'
 }
 
 const LUFS_TARGET = -18 // ReplayGain 2.0 reference loudness
@@ -204,6 +156,10 @@ interface State {
   outputDeviceId: string
   /** big visualizers offered in the nerd-mode overlay (Display → Visualizers) */
   visualizers: VizScope[]
+  /** docked visualizer side panel: open state, selected scope, width */
+  vizPanelOpen: boolean
+  vizScope: VizScope
+  vizPanelWidth: number
   ffmpeg: FfmpegStatus | null
   ffmpegProgress: number | null
   lufsProgress: ScanProgress | null
@@ -229,6 +185,10 @@ interface State {
   setNerdMode: (on: boolean) => void
   setOutputDevice: (deviceId: string) => Promise<void>
   setVisualizers: (v: VizScope[]) => void
+  toggleVizPanel: () => void
+  closeVizPanel: () => void
+  setVizScope: (s: VizScope) => void
+  setVizPanelWidth: (w: number) => void
   dismissWelcome: () => void
   replayWelcome: () => void
   removeFromLibrary: (paths: string[]) => Promise<void>
@@ -279,7 +239,9 @@ function persistSettings(): void {
     seenWelcome: s.seenWelcome,
     nerdMode: s.nerdMode,
     outputDeviceId: s.outputDeviceId,
-    visualizers: s.visualizers
+    visualizers: s.visualizers,
+    vizScope: s.vizScope,
+    vizPanelWidth: s.vizPanelWidth
   })
 }
 
@@ -375,6 +337,9 @@ export const useStore = create<State>((set, get) => ({
   nerdMode: false,
   outputDeviceId: '',
   visualizers: ALL_VIZ_SCOPES,
+  vizPanelOpen: false,
+  vizScope: 'spectrum',
+  vizPanelWidth: 360,
   ffmpeg: null,
   ffmpegProgress: null,
   lufsProgress: null,
@@ -410,6 +375,8 @@ export const useStore = create<State>((set, get) => ({
       nerdMode: settings.nerdMode ?? false,
       outputDeviceId: settings.outputDeviceId ?? '',
       visualizers: settings.visualizers?.length ? settings.visualizers : ALL_VIZ_SCOPES,
+      vizScope: settings.vizScope ?? 'spectrum',
+      vizPanelWidth: settings.vizPanelWidth || 360,
       ffmpeg,
       fpcalcFound
     })
@@ -551,6 +518,18 @@ export const useStore = create<State>((set, get) => ({
   setVisualizers: (visualizers) => {
     set({ visualizers })
     persistSettings()
+  },
+
+  toggleVizPanel: () => set({ vizPanelOpen: !get().vizPanelOpen }),
+  closeVizPanel: () => set({ vizPanelOpen: false }),
+  setVizScope: (vizScope) => {
+    set({ vizScope })
+    persistSettings()
+  },
+  setVizPanelWidth: (vizPanelWidth) => {
+    set({ vizPanelWidth: Math.max(220, Math.min(720, Math.round(vizPanelWidth))) })
+    clearTimeout(saveSettingsTimer)
+    saveSettingsTimer = setTimeout(persistSettings, 400)
   },
 
   dismissWelcome: () => {
