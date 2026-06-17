@@ -140,6 +140,7 @@ export function VuMeter() {
       }
     })
     if (axis || head) {
+      const PAD = 3 // keep the corner labels off the widget's boundary lines
       g.font = '9px system-ui, sans-serif'
       g.fillStyle = vizColors.faint
       g.textBaseline = 'bottom'
@@ -147,13 +148,15 @@ export function VuMeter() {
         const x = vuFrac(db) * w
         g.fillRect(Math.min(x, w - 1), head + span, 1, 3)
         g.textAlign = db === 0 ? 'right' : 'center'
-        g.fillText(String(db), Math.min(x, w - 1), h)
+        // the 0 tick is right-aligned at the edge — inset it so it doesn't kiss
+        // the right/bottom borders (the center ticks stay flush at the baseline)
+        g.fillText(String(db), db === 0 ? w - PAD : Math.min(x, w - 1), db === 0 ? h - PAD : h)
       }
-      // live peak readout (louder of L/R), top-right
+      // live peak readout (louder of L/R), top-right — inset from the corner
       g.textBaseline = 'top'
       g.textAlign = 'right'
       g.fillStyle = peakMax > -1 ? '#ff5c5c' : vizColors.text
-      g.fillText(`${peakMax <= VU_FLOOR ? '−∞' : peakMax.toFixed(1)} dB`, w, 0)
+      g.fillText(`${peakMax <= VU_FLOOR ? '−∞' : peakMax.toFixed(1)} dB`, w - PAD, PAD)
     }
   })
 

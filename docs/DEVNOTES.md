@@ -361,16 +361,16 @@ sketch: pick the tick set at draw time from the live canvas `w` (we already have
 rather than the hard-coded 3/4. Keep the legibility gate. Spectrogram (Phase C) gets the same
 treatment for its time/freq axes.
 
-**Backlog (Stan, 2026-06-16) — viz polish, two items (not yet built).**
+**Backlog (Stan, 2026-06-16) — viz polish.**
 1. **Selectable FPS cap.** Let the user pick a render frame-rate from a coarse range —
    ~24 / 30 / 60 / 120 / 144 / 240. Expose it both in Settings *and* via right-clicking a
    visualizer (context menu). Applies to the pop-out scopes (and presumably the in-app nerd
    widgets); throttle the rAF draw loop to the chosen cap. Persist in `Settings`
    (e.g. `vizFps: number`), ship it in the `VizFrame` feed or read per-window. Default 60.
-2. **VU nerd-mode label padding.** In nerd mode the VU widget's `−∞ dB` (top-right) and the
-   bottom-right dB tick (`0`) sit flush against the widget's border — Stan wants a few px of
-   inset on both the top-right and bottom-right so the labels don't kiss the boundary lines.
-   Pure annotation-layout tweak in `Visualizers.tsx` (the VU draw / `VU_TICKS` placement), no
+2. ~~**VU nerd-mode label padding.**~~ **DONE 2026-06-17.** The VU's `−∞ dB` peak readout
+   (top-right) and the right-aligned `0` dB tick (bottom-right) now inset by a 3px `PAD`
+   from the widget edges so they don't kiss the boundary lines; the center ticks
+   (`-24/-12/-6`) stay flush at the baseline as before. `Visualizers.tsx` VU draw only, no
    data change.
 
 ### Phase B — Nerd mode core (depends on A)
