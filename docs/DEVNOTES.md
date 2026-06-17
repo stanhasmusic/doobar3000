@@ -245,9 +245,9 @@ fall into the queue), `audio.loadUrl`/`toRadioUrl`, a "● LIVE" `WaveformBar`, 
 branch in `TopBar`, and a **temporary "Radio (test)" sidebar entry** (D1 SPIKE PLACEHOLDER → SomaFM
 Groove Salad; D3 replaces it with the radio-browser dialog).
 
-**Phase D2 — ICY now-playing metadata: built & type-clean, uncommitted, pending a live test.**
-Decision made: **hand-rolled de-interleave over `http`/`https`.get** (zero-dep, consistent with
-D1), not the `icy` package or a raw-socket rewrite. The proxy now requests `Icy-MetaData: 1`; when
+**Phase D2 — ICY now-playing metadata: DONE & user-tested 2026-06-16 (commit `403c119`)** —
+SomaFM song titles appeared and updated live. Decision made: **hand-rolled de-interleave over
+`http`/`https`.get** (zero-dep, consistent with D1), not the `icy` package or a raw-socket rewrite. The proxy now requests `Icy-MetaData: 1`; when
 the response carries `icy-metaint`, `icyDeinterleave` (a stateful `Transform` in
 `src/main/index.ts`) strips the interleaved metadata blocks back out of the audio, parses
 `StreamTitle`, and pushes it (on change only) to the renderer via the new `radio-title` IPC →
