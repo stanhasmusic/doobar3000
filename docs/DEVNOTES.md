@@ -234,18 +234,21 @@ docked panel is parked behind `VIZ_PANEL_ENABLED=false`; the top-bar viz widget 
 scope menu. (Earlier handoff said "uncommitted" — that was stale; the tree is clean.)
 
 **Phase D — internet radio: STARTED 2026-06-16.** Scoped into D1–D4 tracer-bullet slices (see the
-Phase D "Scope & build order" section below). **D1 (station playback plumbing) is built &
-type-clean, uncommitted, pending a live test** — the harness can't drive real audio/network. D1
+Phase D "Scope & build order" section below). **D1 (station playback plumbing): DONE &
+user-tested 2026-06-16 (commit `7b9cf89`)** — SomaFM played, visualizers stayed live (proving the
+proxy keeps the stream same-origin), ● LIVE showed, play/pause worked, next/prev no-op'd. D1
 added: `radio://` proxy (`src/main/index.ts` — re-serves an upstream stream same-origin with ACAO
 so the Web Audio graph keeps working on radio; `openRadioStream` uses node `http`/`https`, audio
 only, no ICY yet), `Station` type, `currentStation` + `playStation`/`stopStation` in the renderer
 store (degraded transport: next/prev/seek no-op, leveling forced to 0 dB, onEnded/onError don't
 fall into the queue), `audio.loadUrl`/`toRadioUrl`, a "● LIVE" `WaveformBar`, a station now-playing
 branch in `TopBar`, and a **temporary "Radio (test)" sidebar entry** (D1 SPIKE PLACEHOLDER → SomaFM
-Groove Salad; D3 replaces it with the radio-browser dialog). **Live test to run:** click *Radio
-(test)* in the sidebar — audio should play, the VU/spectrum should stay live (proves the proxy
-keeps the stream same-origin), the bottom bar should read ● LIVE, and the transport should
-play/pause but not seek/skip.
+Groove Salad; D3 replaces it with the radio-browser dialog).
+
+**Next up: Phase D2 — ICY now-playing metadata** (request `Icy-MetaData: 1` in the proxy, read
+`icy-metaint`, strip the metadata bytes out of the audio, parse `StreamTitle`, push it over IPC to
+the now-playing widget + nerd format chip). This is where the hand-rolled-vs-`icy`-dep decision
+gets made.
 
 **Library UX + tagging pass — DONE & user-tested 2026-06-15** (two commits). Triggered by
 a Bob Marley *Legend* track showing no auto art. Shipped: (1) **better cover-art lookup** —
