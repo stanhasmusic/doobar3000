@@ -95,7 +95,10 @@ export function Spectrum() {
 }
 
 const VU_FLOOR = -48 // dB shown at the left edge
-const VU_TICKS = [-24, -12, -6, 0] // nerd-mode dB scale marks
+// nerd-mode dB scale marks. The scale is linear over the 48 dB floor, so marks
+// crowd toward the right (0 dB) — keep them sparse enough to stay legible at the
+// narrow top-bar width (a denser, width-adaptive set is a separate backlog item).
+const VU_TICKS = [-24, -12, 0]
 const vuFrac = (db: number): number => Math.max(0, Math.min(1, (db - VU_FLOOR) / -VU_FLOOR))
 
 export function VuMeter() {
@@ -104,8 +107,8 @@ export function VuMeter() {
   const nerdMode = useStore((s) => s.nerdMode)
 
   const ref = useCanvasLoop((g, w, h) => {
-    const axis = nerdMode && w >= 90 ? 10 : 0 // bottom strip for the dB scale
-    const head = nerdMode && w >= 90 ? 11 : 0 // top strip for the live peak readout
+    const axis = nerdMode && w >= 90 ? 13 : 0 // bottom strip for the dB scale
+    const head = nerdMode && w >= 90 ? 13 : 0 // top strip for the live peak readout
     const barH = 7
     const span = h - axis - head
     const gap = (span - barH * 2) / 3
@@ -147,10 +150,10 @@ export function VuMeter() {
       for (const db of VU_TICKS) {
         const x = vuFrac(db) * w
         g.fillRect(Math.min(x, w - 1), head + span, 1, 3)
+        // the 0 tick is right-aligned at the edge — inset it off the right border;
+        // every label sits a hair above the bottom border so none kiss the edge
         g.textAlign = db === 0 ? 'right' : 'center'
-        // the 0 tick is right-aligned at the edge — inset it so it doesn't kiss
-        // the right/bottom borders (the center ticks stay flush at the baseline)
-        g.fillText(String(db), db === 0 ? w - PAD : Math.min(x, w - 1), db === 0 ? h - PAD : h)
+        g.fillText(String(db), db === 0 ? w - PAD : Math.min(x, w - 1), h - 1)
       }
       // live peak readout (louder of L/R), top-right — inset from the corner
       g.textBaseline = 'top'

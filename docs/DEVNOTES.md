@@ -368,10 +368,13 @@ treatment for its time/freq axes.
    widgets); throttle the rAF draw loop to the chosen cap. Persist in `Settings`
    (e.g. `vizFps: number`), ship it in the `VizFrame` feed or read per-window. Default 60.
 2. ~~**VU nerd-mode label padding.**~~ **DONE 2026-06-17.** The VU's `−∞ dB` peak readout
-   (top-right) and the right-aligned `0` dB tick (bottom-right) now inset by a 3px `PAD`
-   from the widget edges so they don't kiss the boundary lines; the center ticks
-   (`-24/-12/-6`) stay flush at the baseline as before. `Visualizers.tsx` VU draw only, no
-   data change.
+   (top-right) and the right-aligned `0` dB tick (bottom-right) inset by a 3px `PAD` from the
+   widget edges, and every dB label sits a hair (1px) above the bottom border so none kiss the
+   boundary lines. Insetting `0` first collided it with the `-6` mark (the linear 48 dB scale
+   crowds toward the right), so `VU_TICKS` dropped to `-24 / -12 / 0` to stay legible at the
+   narrow top-bar width, and the top/bottom strips grew 10/11→13px for breathing room. The
+   denser, width-adaptive tick set is still item-1's sibling backlog (adaptive axis density).
+   `Visualizers.tsx` VU draw only, no data change.
 
 ### Phase B — Nerd mode core (depends on A)
 
