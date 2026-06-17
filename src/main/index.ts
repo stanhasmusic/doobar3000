@@ -274,6 +274,7 @@ function registerIpc(): void {
   ipcMain.handle('save-library', (_e, library: Track[]) => store.saveLibrary(library))
   ipcMain.handle('get-playlists', () => store.getPlaylists())
   ipcMain.handle('save-playlists', (_e, p: Playlist[]) => store.savePlaylists(p))
+  ipcMain.handle('get-app-version', () => app.getVersion())
   ipcMain.handle('get-settings', () => store.getSettings())
   ipcMain.handle('save-settings', (_e, s: Settings) => store.saveSettings(s))
   ipcMain.handle('set-titlebar-overlay', (_e, o: { color: string; symbolColor: string }) => {

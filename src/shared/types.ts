@@ -76,6 +76,9 @@ export interface Settings {
   accentColor: string
   /** true once the user has dismissed the first-run welcome/alpha-notes dialog */
   seenWelcome: boolean
+  /** "nerd mode" — layers extra technical readouts onto the existing UI and
+   *  reveals advanced settings nodes. A single annotation flag, not a second UI. */
+  nerdMode: boolean
 }
 
 /** one tag proposal from an AcoustID/MusicBrainz lookup */

@@ -16,6 +16,7 @@ const api = {
   saveLibrary: (library: Track[]): Promise<void> => ipcRenderer.invoke('save-library', library),
   getPlaylists: (): Promise<Playlist[]> => ipcRenderer.invoke('get-playlists'),
   savePlaylists: (p: Playlist[]): Promise<void> => ipcRenderer.invoke('save-playlists', p),
+  getAppVersion: (): Promise<string> => ipcRenderer.invoke('get-app-version'),
   getSettings: (): Promise<Settings> => ipcRenderer.invoke('get-settings'),
   saveSettings: (s: Settings): Promise<void> => ipcRenderer.invoke('save-settings', s),
   // recolor the native Windows caption-button strip to match the active theme

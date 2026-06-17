@@ -196,6 +196,8 @@ interface State {
   accentColor: string
   /** first-run welcome dialog is shown until dismissed */
   seenWelcome: boolean
+  /** "nerd mode" — extra technical readouts + advanced settings nodes */
+  nerdMode: boolean
   ffmpeg: FfmpegStatus | null
   ffmpegProgress: number | null
   lufsProgress: ScanProgress | null
@@ -218,7 +220,9 @@ interface State {
   setAcoustidKey: (k: string) => void
   setTheme: (t: Theme) => void
   setAccentColor: (c: string) => void
+  setNerdMode: (on: boolean) => void
   dismissWelcome: () => void
+  replayWelcome: () => void
   removeFromLibrary: (paths: string[]) => Promise<void>
   downloadFfmpeg: () => Promise<void>
   downloadFpcalc: () => Promise<void>
@@ -264,7 +268,8 @@ function persistSettings(): void {
     repeat: s.repeat,
     theme: s.theme,
     accentColor: s.accentColor,
-    seenWelcome: s.seenWelcome
+    seenWelcome: s.seenWelcome,
+    nerdMode: s.nerdMode
   })
 }
 
@@ -357,6 +362,7 @@ export const useStore = create<State>((set, get) => ({
   theme: 'dark',
   accentColor: '#e0556e',
   seenWelcome: true, // assume seen until init loads the real setting (avoids a flash)
+  nerdMode: false,
   ffmpeg: null,
   ffmpegProgress: null,
   lufsProgress: null,
@@ -389,6 +395,7 @@ export const useStore = create<State>((set, get) => ({
       theme: settings.theme ?? 'dark',
       accentColor: settings.accentColor || '#e0556e',
       seenWelcome: settings.seenWelcome ?? false,
+      nerdMode: settings.nerdMode ?? false,
       ffmpeg,
       fpcalcFound
     })
@@ -499,8 +506,19 @@ export const useStore = create<State>((set, get) => ({
     persistSettings()
   },
 
+  setNerdMode: (nerdMode) => {
+    set({ nerdMode })
+    persistSettings()
+  },
+
   dismissWelcome: () => {
     set({ seenWelcome: true })
+    persistSettings()
+  },
+
+  // Re-show the first-run welcome guide (from Settings → General).
+  replayWelcome: () => {
+    set({ seenWelcome: false })
     persistSettings()
   },
 
