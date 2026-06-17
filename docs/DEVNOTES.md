@@ -261,7 +261,7 @@ Build order **A → B → C → D**, each independently shippable and user-testa
 
 ### Phase A — Settings tree (foundation)
 
-**DONE & self-verified 2026-06-16 (commit `ca4a983`), awaiting user test.** The gear
+**DONE & user-tested 2026-06-16 (commit `ca4a983`) — working.** The gear
 popup is now `SettingsDialog.tsx` — a two-level tree (nav rail + per-node sub-tabs that
 only appear when a node has >1 visible child). Existing controls re-homed into
 General / Display→Colors / Playback→Leveling / Library & Tagging; `SettingsMenu.tsx` is
