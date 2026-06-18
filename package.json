@@ -1,7 +1,7 @@
 {
   "name": "doobar3000",
   "productName": "Doobar 3000",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "A native Windows music player: iTunes-simple, foobar2000-powerful.",
   "author": "Stan M",
   "main": "out/main/index.js",
