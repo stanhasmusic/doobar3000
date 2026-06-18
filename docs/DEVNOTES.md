@@ -84,6 +84,19 @@ is exposed on `window` in dev) · `DEV_FFMPEG_DOWNLOAD=1` exercises the decoder-
 download · `DEV_FPCALC_DOWNLOAD=1` exercises the fingerprinter download · `DEBUG_LOG=1`
 prints media-protocol requests and renderer console to the terminal.
 
+## Releases
+
+Built with `npm run dist` (portable `.exe` into `release/`); shipped as GitHub
+pre-releases (alpha, unsigned). Newest first.
+
+- **v0.3.0 — 2026-06-17** (tag `v0.3.0`, commit `e5dd5ba`). Internet radio (Phase D,
+  D1–D4), nerd mode (Phase B), pop-out visualizers (Phase C), the settings tree
+  (Phase A), plus the viz-polish backlog (adaptive axis density, FPS cap, VU label
+  fixes). This is everything from `v0.2.1..v0.3.0`.
+- **v0.2.1 — 2026-06-16** (tag `v0.2.1`). Coherent queue when removing the playing
+  track; on-screen context menus. (Bundled the Phase 1–4 core: playback, leveling,
+  visualizers, themes, smart playlists, duplicate detection, tagging.)
+
 ## Build history
 
 ### Phase 4 — what it does today
