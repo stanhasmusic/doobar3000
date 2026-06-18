@@ -108,6 +108,13 @@ const api = {
   onVizFrame: (cb: (frame: VizFrame) => void): void => {
     ipcRenderer.on('viz-frame', (_e, frame: VizFrame) => cb(frame))
   },
+  // Pop-out window → main process → main window: change the render-rate cap. The
+  // main window owns the setting (persists it + restamps the frame feed), so a
+  // pop-out just forwards the request and lets the new fps come back via onVizFrame.
+  setVizFps: (fps: number): void => ipcRenderer.send('viz-set-fps', fps),
+  onVizSetFps: (cb: (fps: number) => void): void => {
+    ipcRenderer.on('viz-set-fps', (_e, fps: number) => cb(fps))
+  },
   // The scope a pop-out window was opened for (from its URL hash, e.g. #popout=spectrum).
   popoutScope: ((): VizScope | null => {
     const m = window.location.hash.match(/popout=(\w+)/)

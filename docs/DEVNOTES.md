@@ -286,10 +286,11 @@ persists so the **Recent** play-history (session-only in D3) is durable too. `Ra
 two tabs to **three — Search / Favorites / Recent** — with a ★/☆ star toggle on every row
 (`.station-star`, accent when on); the SomaFM seeds are now only the Recent empty-state fallback.
 
-**Phase D (internet radio) is complete.** Next up: the documented viz-polish **backlog** (Stan,
-2026-06-16) — adaptive nerd-axis label density, selectable viz FPS cap, and VU nerd-mode label
-padding (see the backlog notes under the Nerd Mode + Internet Radio section). No new feature phase is
-scheduled beyond that.
+**Phase D (internet radio) is complete.** The viz-polish **backlog** (Stan, 2026-06-16) is now
+fully cleared — VU label padding, adaptive nerd-axis label density, and the selectable viz FPS
+cap all landed 2026-06-17, and the two follow-up polish items (dim the idle VU `−∞ dB` readout;
+fix the viz pop-out menu not dismissing on a top-bar click) landed 2026-06-17 too. The viz-polish
+backlog is now empty. No new feature phase is scheduled beyond that.
 
 **Library UX + tagging pass — DONE & user-tested 2026-06-15** (two commits). Triggered by
 a Bob Marley *Legend* track showing no auto art. Shipped: (1) **better cover-art lookup** —
@@ -350,23 +351,59 @@ render, re-homed controls work, nerd toggle reveals/hides Advanced.
 2026-06-16 that switching to a specific output device reroutes audio *and* the visualizers
 keep working (the `setSinkId`-on-the-AudioContext path holds the whole graph together).
 
-**Backlog (Stan, 2026-06-16) — adaptive nerd-axis label density.** The Phase B annotations
-currently use a *fixed* set of marks: spectrum Hz axis = `100 / 1k / 10k` (`FREQ_TICKS` in
-`Visualizers.tsx`), VU dB scale = `−24 / −12 / −6 / 0` (`VU_TICKS`). Stan wants the count to
-**scale with the rendered widget width** — a small window shows just a few, a wide window
-fills the empty space with more (finer) frequency / dB graduations. Both axes. Implementation
-sketch: pick the tick set at draw time from the live canvas `w` (we already have it in the
-`useCanvasLoop` draw callback) — e.g. a denser candidate list (…/200/500/1k/2k/5k/10k… and
-−36/−24/−18/−12/−9/−6/−3/0) thinned to whatever fits at a min label spacing (~38–45px),
-rather than the hard-coded 3/4. Keep the legibility gate. Spectrogram (Phase C) gets the same
-treatment for its time/freq axes.
+**Backlog (Stan, 2026-06-16) — adaptive nerd-axis label density. DONE 2026-06-17.** The fixed
+tick sets are gone; density now **scales with the rendered widget size**. New shared module
+`src/renderer/src/vizTicks.ts` (pure, no audio/store imports so the pop-out renderer uses it
+too) holds a prioritized candidate list per axis and a greedy `fitTicks(candidates, lengthPx,
+minPx)` that keeps the highest-priority marks still clearing a min label spacing — so a narrow
+widget shows landmarks only, a wide one fills in finer graduations. Freq candidates run
+decade landmarks → half-decades → fillers (`…/200/500/1k/2k/5k/…`, up to 15k); dB candidates
+favour the 12 dB grid (`0/−12/−24/−36`) then 6 then 3 dB. Wired into all four axes:
+in-app Spectrum (`minPx 34`) + VU (`minPx 22`, drops the old hand-tuned `−24/−12/0` for the
+adaptive grid) in `Visualizers.tsx`, and the pop-out Spectrum (`minPx 48`, horizontal) +
+Spectrogram (`minPx 22`, vertical — `lengthPx = h − axis`) in `VizScopes.tsx`. Each caller
+maps its own Hz/dB → frac and picks left/right/centre label alignment from the kept tick's
+index. Legibility gates unchanged (spectrum ≥ 200px, VU ≥ 90px). `FREQ_TICKS`/`VU_TICKS`
+constants removed from both files.
+
+**Backlog (Stan, 2026-06-17) — more viz polish. DONE 2026-06-17.**
+1. ~~**Dim the VU `−∞ dB` peak readout**~~ **DONE.** The top-right peak readout now picks
+   three states instead of two: red when hot (`> −1`), `vizColors.faint` when idle at the
+   floor (`peakMax <= VU_FLOOR`, i.e. showing `−∞`) so it no longer shouts against the faint
+   axis numbers, and full `vizColors.text` only when there's an actual level to read.
+   `Visualizers.tsx` VU draw, the peak-readout `fillStyle`.
+2. ~~**Viz pop-out menu won't dismiss on a top-bar click.**~~ **DONE.** Root cause: the menus'
+   outside-click dismiss used a **bubble-phase** `window` click listener, but several top-bar
+   widgets `stopPropagation` on their own clicks (the logo's mode menu in `LogoMark.tsx`, the viz
+   widget itself) — so clicks landing on the top bar never bubbled to `window` and never
+   dismissed. Fix: all three top-bar menu dismiss listeners (`menu`/`vizMenu`/`fpsMenu`) now
+   listen in the **capture phase** (`addEventListener('click', close, true)`), which runs from
+   `window` down to the target *before* any bubble-phase `stopPropagation` can swallow it; menu
+   items still fire their own onClick because React defers the unmount past the event. With
+   capture handling dismissal, `onVizClick` drops its `stopPropagation` and just **toggles**
+   (`setVizMenu(vizMenu ? null : …)`) so a re-click on the widget closes it. `TopBar.tsx`.
 
 **Backlog (Stan, 2026-06-16) — viz polish.**
-1. **Selectable FPS cap.** Let the user pick a render frame-rate from a coarse range —
-   ~24 / 30 / 60 / 120 / 144 / 240. Expose it both in Settings *and* via right-clicking a
-   visualizer (context menu). Applies to the pop-out scopes (and presumably the in-app nerd
-   widgets); throttle the rAF draw loop to the chosen cap. Persist in `Settings`
-   (e.g. `vizFps: number`), ship it in the `VizFrame` feed or read per-window. Default 60.
+1. ~~**Selectable FPS cap.**~~ **DONE 2026-06-17.** New persisted `Settings.vizFps` (main
+   `DEFAULT_SETTINGS` + renderer store/persist; default 60). Coarse options live in the new
+   shared `src/renderer/src/vizFps.ts` (`VIZ_FPS_OPTIONS = 24/30/60/120/144/240`,
+   `DEFAULT_VIZ_FPS`, and `makeFpsGate()` — a pure rAF time-gate that accumulates the target
+   interval so caps that don't divide the refresh rate evenly still average out, and resyncs
+   after a stall/fps-change so it never bursts). rAF/display refresh is the hard ceiling, so
+   the cap only ever *throttles*; the top option ≈ "every frame". Wired into **every** draw
+   loop: `useCanvasLoop` (in-bar Spectrum/VU, `Visualizers.tsx`) and `useStageCanvas` (pop-out
+   scopes, `VizScopes.tsx`, via a new `fps` prop on `VizCanvas`), each reading the live cap
+   through a ref so it changes without restarting the loop. The pop-out window has no store, so
+   `fps` rides in the `VizFrame` feed (new field) — and the feed itself (`liveSource.tick`) is
+   gated to the cap so we don't serialise frames the pop-out would drop. **Two entry points:**
+   Settings → Display → Visualizers (a "Frame-rate cap" select) and **right-clicking a
+   visualizer** — both the top-bar viz widget (`fpsMenu` context menu in `TopBar.tsx`) and the
+   pop-out windows (`fpsMenu` in `Popout.tsx`), each with a ✓ on the current value. The pop-out
+   has no store, so its menu round-trips through a new IPC pair: `setVizFps` (pop-out → main →
+   main window via the `viz-set-fps` channel) lands in `startVizFeedBridge`'s `onVizSetFps`
+   listener, which calls `store.setVizFps` — that persists it and restamps the feed, so the
+   in-bar widgets and every open pop-out converge on the new cap. The pop-out also sets fps
+   optimistically for instant feedback before the round-trip confirms via the next frame.
 2. ~~**VU nerd-mode label padding.**~~ **DONE 2026-06-17.** The VU's `−∞ dB` peak readout
    (top-right) and the right-aligned `0` dB tick (bottom-right) inset by a 3px `PAD` from the
    widget edges, and every dB label sits a hair (1px) above the bottom border so none kiss the
@@ -374,8 +411,9 @@ treatment for its time/freq axes.
    crowds toward the right), so `VU_TICKS` dropped to `-24 / -12 / 0` to stay legible at the
    narrow top-bar width, and the top/bottom strips grew 10/11→13px for breathing room. Each
    number is right-aligned just left of its tick mark (the `|` was overlapping the digits when
-   centered on the same x). The denser, width-adaptive tick set is still item-1's sibling
-   backlog (adaptive axis density). `Visualizers.tsx` VU draw only, no data change.
+   centered on the same x). `Visualizers.tsx` VU draw only, no data change. *(The pared
+   `−24/−12/0` set has since been superseded by the adaptive-density work — see the adaptive
+   nerd-axis backlog note above, DONE 2026-06-17.)*
 
 ### Phase B — Nerd mode core (depends on A)
 
@@ -492,9 +530,9 @@ slow persistence fade for the classic glowing blob). All draw on a fixed dark st
   (`VizScope` + `ALL_VIZ_SCOPES` + `VIZ_SCOPE_LABELS` in `shared/types.ts`), persisted
   everywhere `nerdMode`/`outputDeviceId` flow; default = all four; the panel keeps ≥1 scope
   enabled. Last-viewed scope persists in `localStorage` (`vizScope`, mirrors `settingsNode`).
-- **Backlog still open:** adaptive axis-label density (see the Phase B backlog note) applies
-  to the big spectrum's Hz axis and the spectrogram's freq axis too — both currently use the
-  fixed `SPEC_TICKS` set.
+- **Adaptive axis-label density — DONE 2026-06-17.** The big spectrum's Hz axis and the
+  spectrogram's freq axis now pick ticks per-draw via the shared `vizTicks` module (see the
+  adaptive nerd-axis backlog note above); the fixed tick set is gone.
 
 Original design notes for the phase:
 

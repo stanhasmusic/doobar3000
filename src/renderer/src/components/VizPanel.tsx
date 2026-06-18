@@ -19,6 +19,7 @@ export function VizPanel(): React.ReactNode {
   const enabled = useStore((s) => s.visualizers)
   const scope = useStore((s) => s.vizScope)
   const width = useStore((s) => s.vizPanelWidth)
+  const fps = useStore((s) => s.vizFps)
   const { setVizScope, closeVizPanel, setVizPanelWidth } = useStore.getState()
 
   if (!VIZ_PANEL_ENABLED || !open || !nerdMode) return null
@@ -73,7 +74,7 @@ export function VizPanel(): React.ReactNode {
       </div>
       <div className="viz-panel-stage">
         {active ? (
-          <VizCanvas key={active} scope={active} source={liveSource} />
+          <VizCanvas key={active} scope={active} source={liveSource} fps={fps} />
         ) : (
           <div className="viz-empty">
             No visualizers enabled — turn some on in Settings → Display → Visualizers.

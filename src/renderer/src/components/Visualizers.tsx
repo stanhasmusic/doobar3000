@@ -1,18 +1,28 @@
 import { useEffect, useRef } from 'react'
 import { audio } from '../audio'
 import { useStore, vizColors } from '../store'
+import { pickDbTicks, pickFreqTicks } from '../vizTicks'
+import { makeFpsGate } from '../vizFps'
 
 // The draw callback is held in a ref and refreshed every render, so the rAF loop
 // (started once) always calls the latest closure — letting `draw` read live props
-// like nerd mode without restarting the loop.
-function useCanvasLoop(draw: (g: CanvasRenderingContext2D, w: number, h: number) => void) {
+// like nerd mode without restarting the loop. `fps` is likewise read live via a
+// ref so the user's render-rate cap can change without tearing down the loop.
+function useCanvasLoop(
+  draw: (g: CanvasRenderingContext2D, w: number, h: number) => void,
+  fps: number
+) {
   const ref = useRef<HTMLCanvasElement>(null)
   const drawRef = useRef(draw)
   drawRef.current = draw
+  const fpsRef = useRef(fps)
+  fpsRef.current = fps
   useEffect(() => {
     let raf = 0
-    const loop = () => {
+    const gate = makeFpsGate()
+    const loop = (now: number) => {
       raf = requestAnimationFrame(loop)
+      if (!gate(now, fpsRef.current)) return
       const canvas = ref.current
       if (!canvas) return
       const dpr = window.devicePixelRatio || 1
@@ -41,17 +51,11 @@ const BARS = 48
 const FREQ_MIN = 50
 const FREQ_MAX = 16000
 
-// nerd-mode frequency markers (Hz) labelled along the spectrum's bottom edge
-const FREQ_TICKS: { f: number; label: string }[] = [
-  { f: 100, label: '100' },
-  { f: 1000, label: '1k' },
-  { f: 10000, label: '10k' }
-]
-
 export function Spectrum() {
   const analyser = audio.spectrumAnalyser
   const data = useRef(new Uint8Array(analyser.frequencyBinCount))
   const nerdMode = useStore((s) => s.nerdMode)
+  const fps = useStore((s) => s.vizFps)
 
   const ref = useCanvasLoop((g, w, h) => {
     analyser.getByteFrequencyData(data.current)
@@ -82,29 +86,28 @@ export function Spectrum() {
       g.font = '9px system-ui, sans-serif'
       g.textBaseline = 'bottom'
       g.fillStyle = vizColors.faint
-      for (const { f, label } of FREQ_TICKS) {
-        const x = freqFrac(f) * w
+      // density scales with width: more graduations fill a wider widget
+      const ticks = pickFreqTicks(freqFrac, w, 34)
+      ticks.forEach((t, i) => {
+        const x = t.frac * w
         g.fillRect(x, plotH - 2, 1, 3) // a small tick into the plot
-        g.textAlign = f === FREQ_TICKS[0].f ? 'left' : f === 10000 ? 'right' : 'center'
-        g.fillText(label, Math.max(1, Math.min(w - 1, x)), h)
-      }
+        g.textAlign = i === 0 ? 'left' : i === ticks.length - 1 ? 'right' : 'center'
+        g.fillText(t.label, Math.max(1, Math.min(w - 1, x)), h)
+      })
     }
-  })
+  }, fps)
 
   return <canvas ref={ref} className="spectrum" />
 }
 
 const VU_FLOOR = -48 // dB shown at the left edge
-// nerd-mode dB scale marks. The scale is linear over the 48 dB floor, so marks
-// crowd toward the right (0 dB) — keep them sparse enough to stay legible at the
-// narrow top-bar width (a denser, width-adaptive set is a separate backlog item).
-const VU_TICKS = [-24, -12, 0]
 const vuFrac = (db: number): number => Math.max(0, Math.min(1, (db - VU_FLOOR) / -VU_FLOOR))
 
 export function VuMeter() {
   const buffers = useRef(audio.vuAnalysers.map((a) => new Float32Array(a.fftSize)))
   const peaks = useRef([VU_FLOOR, VU_FLOOR])
   const nerdMode = useStore((s) => s.nerdMode)
+  const fps = useStore((s) => s.vizFps)
 
   const ref = useCanvasLoop((g, w, h) => {
     const axis = nerdMode && w >= 90 ? 13 : 0 // bottom strip for the dB scale
@@ -148,20 +151,25 @@ export function VuMeter() {
       g.fillStyle = vizColors.faint
       g.textBaseline = 'bottom'
       g.textAlign = 'right'
-      for (const db of VU_TICKS) {
-        const x = Math.min(vuFrac(db) * w, w - 1)
+      // width-adaptive density: the 12 dB grid at the narrow top-bar width,
+      // filling in 6/3 dB marks as the widget grows
+      for (const t of pickDbTicks(vuFrac, w, 22)) {
+        const x = Math.min(t.frac * w, w - 1)
         g.fillRect(x, head + span, 1, 3)
         // each number sits just left of its tick mark (right-aligned) so the mark
         // never crosses the digits; the baseline is a hair above the bottom border
-        g.fillText(String(db), x - 2, h - 1)
+        g.fillText(t.label, x - 2, h - 1)
       }
-      // live peak readout (louder of L/R), top-right — inset from the corner
+      // live peak readout (louder of L/R), top-right — inset from the corner.
+      // red when hot; an idle −∞ dims to the tick-number faint so it doesn't shout
+      // when there's no signal; an actual level stays full-strength text.
       g.textBaseline = 'top'
       g.textAlign = 'right'
-      g.fillStyle = peakMax > -1 ? '#ff5c5c' : vizColors.text
+      g.fillStyle =
+        peakMax > -1 ? '#ff5c5c' : peakMax <= VU_FLOOR ? vizColors.faint : vizColors.text
       g.fillText(`${peakMax <= VU_FLOOR ? '−∞' : peakMax.toFixed(1)} dB`, w - PAD, PAD)
     }
-  })
+  }, fps)
 
   return <canvas ref={ref} className="vu-meter" title="VU (L/R)" />
 }
