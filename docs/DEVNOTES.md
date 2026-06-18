@@ -288,10 +288,9 @@ two tabs to **three — Search / Favorites / Recent** — with a ★/☆ star to
 
 **Phase D (internet radio) is complete.** The viz-polish **backlog** (Stan, 2026-06-16) is now
 fully cleared — VU label padding, adaptive nerd-axis label density, and the selectable viz FPS
-cap all landed 2026-06-17. Two **new** small polish items remain (Stan, 2026-06-17): dim the
-VU `−∞ dB` peak readout to match the bottom tick numbers, and fix the viz pop-out menu not
-dismissing on a top-bar click (see the new backlog notes under the Nerd Mode + Internet Radio
-section). No new feature phase is scheduled beyond that.
+cap all landed 2026-06-17, and the two follow-up polish items (dim the idle VU `−∞ dB` readout;
+fix the viz pop-out menu not dismissing on a top-bar click) landed 2026-06-17 too. The viz-polish
+backlog is now empty. No new feature phase is scheduled beyond that.
 
 **Library UX + tagging pass — DONE & user-tested 2026-06-15** (two commits). Triggered by
 a Bob Marley *Legend* track showing no auto art. Shipped: (1) **better cover-art lookup** —
@@ -367,16 +366,22 @@ maps its own Hz/dB → frac and picks left/right/centre label alignment from the
 index. Legibility gates unchanged (spectrum ≥ 200px, VU ≥ 90px). `FREQ_TICKS`/`VU_TICKS`
 constants removed from both files.
 
-**Backlog (Stan, 2026-06-17) — more viz polish (new).**
-1. **Dim the VU `−∞ dB` peak readout** to match the bottom dB tick numbers. The top-right
-   peak readout currently renders brighter than the `vizColors.faint` axis numbers (it uses
-   `vizColors.text`, or red when hot) — Stan wants the idle/quiet state visually muted to
-   match the bottom row. `Visualizers.tsx` VU draw, the `fillText(... dB ...)` line.
-2. **Viz pop-out menu won't dismiss on a top-bar click.** Clicking the VU meter or the
-   spectrogram opens the visualizer pop-up menu; clicking anywhere *except* the app's TOP
-   section dismisses it as expected, but clicks on the top bar don't close it. Likely the
-   outside-click / backdrop handler doesn't cover (or is occluded by) the top-bar region.
-   Look at the menu's dismiss logic in `TopBar.tsx` / wherever the viz menu mounts.
+**Backlog (Stan, 2026-06-17) — more viz polish. DONE 2026-06-17.**
+1. ~~**Dim the VU `−∞ dB` peak readout**~~ **DONE.** The top-right peak readout now picks
+   three states instead of two: red when hot (`> −1`), `vizColors.faint` when idle at the
+   floor (`peakMax <= VU_FLOOR`, i.e. showing `−∞`) so it no longer shouts against the faint
+   axis numbers, and full `vizColors.text` only when there's an actual level to read.
+   `Visualizers.tsx` VU draw, the peak-readout `fillStyle`.
+2. ~~**Viz pop-out menu won't dismiss on a top-bar click.**~~ **DONE.** Root cause: the menus'
+   outside-click dismiss used a **bubble-phase** `window` click listener, but several top-bar
+   widgets `stopPropagation` on their own clicks (the logo's mode menu in `LogoMark.tsx`, the viz
+   widget itself) — so clicks landing on the top bar never bubbled to `window` and never
+   dismissed. Fix: all three top-bar menu dismiss listeners (`menu`/`vizMenu`/`fpsMenu`) now
+   listen in the **capture phase** (`addEventListener('click', close, true)`), which runs from
+   `window` down to the target *before* any bubble-phase `stopPropagation` can swallow it; menu
+   items still fire their own onClick because React defers the unmount past the event. With
+   capture handling dismissal, `onVizClick` drops its `stopPropagation` and just **toggles**
+   (`setVizMenu(vizMenu ? null : …)`) so a re-click on the widget closes it. `TopBar.tsx`.
 
 **Backlog (Stan, 2026-06-16) — viz polish.**
 1. ~~**Selectable FPS cap.**~~ **DONE 2026-06-17.** New persisted `Settings.vizFps` (main

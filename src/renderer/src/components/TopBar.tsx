@@ -70,13 +70,18 @@ export function TopBar() {
 
   // Clicking the viz widget either toggles the docked panel (if enabled) or opens
   // a menu to pop a scope into its own window (the panel is parked by default).
+  // The menu *toggles* so a second click on the widget closes it. Dismissal for
+  // clicks *elsewhere* is a capture-phase window listener (see the effects below):
+  // the top bar is full of widgets that stopPropagation (the logo, this widget),
+  // so a plain bubble-phase dismiss never saw clicks that landed on them — capture
+  // runs before any of that. The opening click itself can't self-close because the
+  // listener only attaches in a later effect.
   const onVizClick = (e: React.MouseEvent): void => {
     if (VIZ_PANEL_ENABLED) {
       useStore.getState().toggleVizPanel()
       return
     }
-    e.stopPropagation() // don't let this click immediately dismiss the menu
-    setVizMenu({ x: e.clientX, y: e.clientY })
+    setVizMenu(vizMenu ? null : { x: e.clientX, y: e.clientY })
   }
 
   // Right-clicking the viz widget picks the render-rate cap (it stops propagation
@@ -89,28 +94,30 @@ export function TopBar() {
 
   const track = trackByPath(library, currentPath)
 
-  // Dismiss the right-click menu on any click (matches the column-header menu).
+  // Dismiss each menu on any click outside it. We listen in the *capture* phase
+  // (the `true`): top-bar widgets like the logo and the viz widget stopPropagation
+  // on their own clicks, which would swallow a bubble-phase dismiss — capture fires
+  // first, before any of that, so a click anywhere reliably closes the menu. Menu
+  // items still run their own onClick (React defers the unmount past this event).
   useEffect(() => {
     if (!menu) return
     const close = () => setMenu(null)
-    window.addEventListener('click', close)
-    return () => window.removeEventListener('click', close)
+    window.addEventListener('click', close, true)
+    return () => window.removeEventListener('click', close, true)
   }, [menu])
 
-  // Same for the viz pop-out menu.
   useEffect(() => {
     if (!vizMenu) return
     const close = () => setVizMenu(null)
-    window.addEventListener('click', close)
-    return () => window.removeEventListener('click', close)
+    window.addEventListener('click', close, true)
+    return () => window.removeEventListener('click', close, true)
   }, [vizMenu])
 
-  // …and the render-rate menu.
   useEffect(() => {
     if (!fpsMenu) return
     const close = () => setFpsMenu(null)
-    window.addEventListener('click', close)
-    return () => window.removeEventListener('click', close)
+    window.addEventListener('click', close, true)
+    return () => window.removeEventListener('click', close, true)
   }, [fpsMenu])
 
   // Esc leaves rearrange mode (so does the Done pill / clicking outside the bar).
