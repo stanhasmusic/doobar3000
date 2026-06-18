@@ -160,10 +160,13 @@ export function VuMeter() {
         // never crosses the digits; the baseline is a hair above the bottom border
         g.fillText(t.label, x - 2, h - 1)
       }
-      // live peak readout (louder of L/R), top-right — inset from the corner
+      // live peak readout (louder of L/R), top-right — inset from the corner.
+      // red when hot; an idle −∞ dims to the tick-number faint so it doesn't shout
+      // when there's no signal; an actual level stays full-strength text.
       g.textBaseline = 'top'
       g.textAlign = 'right'
-      g.fillStyle = peakMax > -1 ? '#ff5c5c' : vizColors.text
+      g.fillStyle =
+        peakMax > -1 ? '#ff5c5c' : peakMax <= VU_FLOOR ? vizColors.faint : vizColors.text
       g.fillText(`${peakMax <= VU_FLOOR ? '−∞' : peakMax.toFixed(1)} dB`, w - PAD, PAD)
     }
   }, fps)
