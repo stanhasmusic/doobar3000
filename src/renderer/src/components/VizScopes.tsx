@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { type VizScope } from '../../../shared/types'
 import { vizColors } from '../vizColors'
+import { pickFreqTicks } from '../vizTicks'
 
 // Shared visualizer rendering for Phase C. The four scopes are pure draw
 // functions over a `VizSource` — an abstraction of the analyser taps — so the
@@ -57,18 +58,11 @@ function useStageCanvas(
   return ref
 }
 
-// Shared log-frequency span + axis ticks.
+// Shared log-frequency span. Axis ticks are picked adaptively per draw (see
+// vizTicks) so density scales with the rendered width/height.
 const F_MIN = 30
 const F_MAX = 20000
 const freqFrac = (f: number): number => Math.log(f / F_MIN) / Math.log(F_MAX / F_MIN)
-const FREQ_TICKS: { f: number; label: string }[] = [
-  { f: 30, label: '30' },
-  { f: 100, label: '100' },
-  { f: 300, label: '300' },
-  { f: 1000, label: '1k' },
-  { f: 3000, label: '3k' },
-  { f: 10000, label: '10k' }
-]
 
 interface ScopeSpec {
   clear: boolean
@@ -170,12 +164,13 @@ const SCOPES: Record<VizScope, ScopeSpec> = {
       g.font = '11px system-ui, sans-serif'
       g.textBaseline = 'bottom'
       g.fillStyle = vizColors.faint
-      for (const { f, label } of FREQ_TICKS) {
-        const x = freqFrac(f) * w
+      const ticks = pickFreqTicks(freqFrac, w, 48)
+      ticks.forEach((t, i) => {
+        const x = t.frac * w
         g.fillRect(x, plotH - 3, 1, 4)
-        g.textAlign = f === FREQ_TICKS[0].f ? 'left' : f === 10000 ? 'right' : 'center'
-        g.fillText(`${label} Hz`, Math.max(1, Math.min(w - 1, x)), h)
-      }
+        g.textAlign = i === 0 ? 'left' : i === ticks.length - 1 ? 'right' : 'center'
+        g.fillText(`${t.label} Hz`, Math.max(1, Math.min(w - 1, x)), h)
+      })
     }
   },
 
@@ -217,12 +212,13 @@ const SCOPES: Record<VizScope, ScopeSpec> = {
       g.font = '11px system-ui, sans-serif'
       g.textBaseline = 'middle'
       g.textAlign = 'left'
-      for (const { f, label } of FREQ_TICKS) {
-        const y = (1 - freqFrac(f)) * (h - axis)
+      // vertical axis: density scales with the rendered height
+      for (const t of pickFreqTicks(freqFrac, h - axis, 22)) {
+        const y = (1 - t.frac) * (h - axis)
         g.fillStyle = 'rgba(0,0,0,0.45)'
         g.fillRect(0, y - 7, 34, 14)
         g.fillStyle = vizColors.text
-        g.fillText(label, 3, y)
+        g.fillText(t.label, 3, y)
       }
       g.fillStyle = vizColors.faint
       g.textBaseline = 'bottom'

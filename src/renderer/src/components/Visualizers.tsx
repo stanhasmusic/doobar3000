@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { audio } from '../audio'
 import { useStore, vizColors } from '../store'
+import { pickDbTicks, pickFreqTicks } from '../vizTicks'
 
 // The draw callback is held in a ref and refreshed every render, so the rAF loop
 // (started once) always calls the latest closure — letting `draw` read live props
@@ -41,13 +42,6 @@ const BARS = 48
 const FREQ_MIN = 50
 const FREQ_MAX = 16000
 
-// nerd-mode frequency markers (Hz) labelled along the spectrum's bottom edge
-const FREQ_TICKS: { f: number; label: string }[] = [
-  { f: 100, label: '100' },
-  { f: 1000, label: '1k' },
-  { f: 10000, label: '10k' }
-]
-
 export function Spectrum() {
   const analyser = audio.spectrumAnalyser
   const data = useRef(new Uint8Array(analyser.frequencyBinCount))
@@ -82,12 +76,14 @@ export function Spectrum() {
       g.font = '9px system-ui, sans-serif'
       g.textBaseline = 'bottom'
       g.fillStyle = vizColors.faint
-      for (const { f, label } of FREQ_TICKS) {
-        const x = freqFrac(f) * w
+      // density scales with width: more graduations fill a wider widget
+      const ticks = pickFreqTicks(freqFrac, w, 34)
+      ticks.forEach((t, i) => {
+        const x = t.frac * w
         g.fillRect(x, plotH - 2, 1, 3) // a small tick into the plot
-        g.textAlign = f === FREQ_TICKS[0].f ? 'left' : f === 10000 ? 'right' : 'center'
-        g.fillText(label, Math.max(1, Math.min(w - 1, x)), h)
-      }
+        g.textAlign = i === 0 ? 'left' : i === ticks.length - 1 ? 'right' : 'center'
+        g.fillText(t.label, Math.max(1, Math.min(w - 1, x)), h)
+      })
     }
   })
 
@@ -95,10 +91,6 @@ export function Spectrum() {
 }
 
 const VU_FLOOR = -48 // dB shown at the left edge
-// nerd-mode dB scale marks. The scale is linear over the 48 dB floor, so marks
-// crowd toward the right (0 dB) — keep them sparse enough to stay legible at the
-// narrow top-bar width (a denser, width-adaptive set is a separate backlog item).
-const VU_TICKS = [-24, -12, 0]
 const vuFrac = (db: number): number => Math.max(0, Math.min(1, (db - VU_FLOOR) / -VU_FLOOR))
 
 export function VuMeter() {
@@ -148,12 +140,14 @@ export function VuMeter() {
       g.fillStyle = vizColors.faint
       g.textBaseline = 'bottom'
       g.textAlign = 'right'
-      for (const db of VU_TICKS) {
-        const x = Math.min(vuFrac(db) * w, w - 1)
+      // width-adaptive density: the 12 dB grid at the narrow top-bar width,
+      // filling in 6/3 dB marks as the widget grows
+      for (const t of pickDbTicks(vuFrac, w, 22)) {
+        const x = Math.min(t.frac * w, w - 1)
         g.fillRect(x, head + span, 1, 3)
         // each number sits just left of its tick mark (right-aligned) so the mark
         // never crosses the digits; the baseline is a hair above the bottom border
-        g.fillText(String(db), x - 2, h - 1)
+        g.fillText(t.label, x - 2, h - 1)
       }
       // live peak readout (louder of L/R), top-right — inset from the corner
       g.textBaseline = 'top'
