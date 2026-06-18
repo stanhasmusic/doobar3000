@@ -1,6 +1,7 @@
 import { audio } from './audio'
 import type { VizSource } from './components/VizScopes'
 import { trackByPath, useStore } from './store'
+import { makeFpsGate } from './vizFps'
 
 // The live VizSource: the main window's own analyser nodes. Lives in its own
 // module (imports `audio`) so VizScopes can stay audio-free for the pop-out.
@@ -26,17 +27,33 @@ const freq = new Uint8Array(audio.spectrumAnalyser.frequencyBinCount)
 const timeL = new Float32Array(audio.vuAnalysers[0].fftSize)
 const timeR = new Float32Array(audio.vuAnalysers[1].fftSize)
 
-function tick(): void {
+// Throttle the feed itself to the chosen cap — no point serialising frames the
+// pop-out would only drop. The pop-out re-gates to the same fps on its end.
+const feedGate = makeFpsGate()
+
+function tick(now: number): void {
   feedRaf = requestAnimationFrame(tick)
+  const s = useStore.getState()
+  const fps = s.vizFps
+  if (!feedGate(now, fps)) return
   audio.spectrumAnalyser.getByteFrequencyData(freq)
   audio.vuAnalysers[0].getFloatTimeDomainData(timeL)
   audio.vuAnalysers[1].getFloatTimeDomainData(timeR)
-  const s = useStore.getState()
   const title = trackByPath(s.library, s.currentPath)?.title ?? ''
-  window.api.sendVizFrame({ freq, timeL, timeR, sampleRate: audio.context.sampleRate, title })
+  window.api.sendVizFrame({
+    freq,
+    timeL,
+    timeR,
+    sampleRate: audio.context.sampleRate,
+    title,
+    fps
+  })
 }
 
 export function startVizFeedBridge(): void {
+  // A pop-out asked to change the cap — apply it to the store (persists + the feed
+  // restamps it, so the in-bar widgets and every pop-out converge on the new fps).
+  window.api.onVizSetFps((fps) => useStore.getState().setVizFps(fps))
   window.api.onVizFeed((active) => {
     if (active && !feedRaf) {
       feedRaf = requestAnimationFrame(tick)

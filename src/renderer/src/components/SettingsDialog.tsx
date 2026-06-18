@@ -8,6 +8,7 @@ import {
 } from '../../../shared/types'
 import { audio } from '../audio'
 import { formatRate, trackByPath, useStore } from '../store'
+import { VIZ_FPS_OPTIONS } from '../vizFps'
 
 const MODES: { value: LevelMode; label: string }[] = [
   { value: 'off', label: 'Off' },
@@ -258,7 +259,8 @@ const VIZ_DESCRIPTIONS: Record<VizScope, string> = {
 
 function VisualizersPanel(): React.ReactNode {
   const enabled = useStore((s) => s.visualizers)
-  const { setVisualizers } = useStore.getState()
+  const fps = useStore((s) => s.vizFps)
+  const { setVisualizers, setVizFps } = useStore.getState()
 
   const toggle = (scope: VizScope, on: boolean): void => {
     const next = ALL_VIZ_SCOPES.filter((s) => (s === scope ? on : enabled.includes(s)))
@@ -291,6 +293,25 @@ function VisualizersPanel(): React.ReactNode {
       <div className="set-hint">
         Pick which scopes are available. Click the spectrum/VU widget in the top bar (nerd mode)
         to pop a scope into its own floating, always-on-top window — open as many as you like.
+      </div>
+
+      <div className="set-title">Frame-rate cap</div>
+      <select
+        className="set-input"
+        value={fps}
+        onChange={(e) => setVizFps(Number(e.target.value))}
+      >
+        {VIZ_FPS_OPTIONS.map((f) => (
+          <option key={f} value={f}>
+            {f} fps{f === 60 ? ' (default)' : ''}
+          </option>
+        ))}
+      </select>
+      <div className="set-hint">
+        Throttles how often every visualizer redraws — the in-bar spectrum/VU and the pop-out
+        scopes. Your display&apos;s refresh rate is the real ceiling, so the top setting just means
+        &ldquo;draw every frame.&rdquo; Lower it to spend less GPU/CPU on the visuals. Also on the
+        right-click menu of the top-bar viz widget.
       </div>
     </>
   )

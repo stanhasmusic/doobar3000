@@ -139,6 +139,9 @@ function registerIpc(): void {
   ipcMain.on('viz-frame', (_e, frame) => {
     for (const pop of popouts) pop.webContents.send('viz-frame', frame)
   })
+  // A pop-out's render-rate menu → relay to the main window, which owns the
+  // setting (it persists it and restamps the feed; pop-outs follow via viz-frame).
+  ipcMain.on('viz-set-fps', (_e, fps: number) => win?.webContents.send('viz-set-fps', fps))
 
   ipcMain.handle('select-folder', async () => {
     const result = await dialog.showOpenDialog(win!, { properties: ['openDirectory'] })

@@ -286,10 +286,12 @@ persists so the **Recent** play-history (session-only in D3) is durable too. `Ra
 two tabs to **three — Search / Favorites / Recent** — with a ★/☆ star toggle on every row
 (`.station-star`, accent when on); the SomaFM seeds are now only the Recent empty-state fallback.
 
-**Phase D (internet radio) is complete.** Of the viz-polish **backlog** (Stan, 2026-06-16),
-VU nerd-mode label padding (2026-06-17) and adaptive nerd-axis label density (2026-06-17) are
-**done**; the one item left is the **selectable viz FPS cap** (see the backlog notes under the
-Nerd Mode + Internet Radio section). No new feature phase is scheduled beyond that.
+**Phase D (internet radio) is complete.** The viz-polish **backlog** (Stan, 2026-06-16) is now
+fully cleared — VU label padding, adaptive nerd-axis label density, and the selectable viz FPS
+cap all landed 2026-06-17. Two **new** small polish items remain (Stan, 2026-06-17): dim the
+VU `−∞ dB` peak readout to match the bottom tick numbers, and fix the viz pop-out menu not
+dismissing on a top-bar click (see the new backlog notes under the Nerd Mode + Internet Radio
+section). No new feature phase is scheduled beyond that.
 
 **Library UX + tagging pass — DONE & user-tested 2026-06-15** (two commits). Triggered by
 a Bob Marley *Legend* track showing no auto art. Shipped: (1) **better cover-art lookup** —
@@ -365,12 +367,38 @@ maps its own Hz/dB → frac and picks left/right/centre label alignment from the
 index. Legibility gates unchanged (spectrum ≥ 200px, VU ≥ 90px). `FREQ_TICKS`/`VU_TICKS`
 constants removed from both files.
 
+**Backlog (Stan, 2026-06-17) — more viz polish (new).**
+1. **Dim the VU `−∞ dB` peak readout** to match the bottom dB tick numbers. The top-right
+   peak readout currently renders brighter than the `vizColors.faint` axis numbers (it uses
+   `vizColors.text`, or red when hot) — Stan wants the idle/quiet state visually muted to
+   match the bottom row. `Visualizers.tsx` VU draw, the `fillText(... dB ...)` line.
+2. **Viz pop-out menu won't dismiss on a top-bar click.** Clicking the VU meter or the
+   spectrogram opens the visualizer pop-up menu; clicking anywhere *except* the app's TOP
+   section dismisses it as expected, but clicks on the top bar don't close it. Likely the
+   outside-click / backdrop handler doesn't cover (or is occluded by) the top-bar region.
+   Look at the menu's dismiss logic in `TopBar.tsx` / wherever the viz menu mounts.
+
 **Backlog (Stan, 2026-06-16) — viz polish.**
-1. **Selectable FPS cap.** Let the user pick a render frame-rate from a coarse range —
-   ~24 / 30 / 60 / 120 / 144 / 240. Expose it both in Settings *and* via right-clicking a
-   visualizer (context menu). Applies to the pop-out scopes (and presumably the in-app nerd
-   widgets); throttle the rAF draw loop to the chosen cap. Persist in `Settings`
-   (e.g. `vizFps: number`), ship it in the `VizFrame` feed or read per-window. Default 60.
+1. ~~**Selectable FPS cap.**~~ **DONE 2026-06-17.** New persisted `Settings.vizFps` (main
+   `DEFAULT_SETTINGS` + renderer store/persist; default 60). Coarse options live in the new
+   shared `src/renderer/src/vizFps.ts` (`VIZ_FPS_OPTIONS = 24/30/60/120/144/240`,
+   `DEFAULT_VIZ_FPS`, and `makeFpsGate()` — a pure rAF time-gate that accumulates the target
+   interval so caps that don't divide the refresh rate evenly still average out, and resyncs
+   after a stall/fps-change so it never bursts). rAF/display refresh is the hard ceiling, so
+   the cap only ever *throttles*; the top option ≈ "every frame". Wired into **every** draw
+   loop: `useCanvasLoop` (in-bar Spectrum/VU, `Visualizers.tsx`) and `useStageCanvas` (pop-out
+   scopes, `VizScopes.tsx`, via a new `fps` prop on `VizCanvas`), each reading the live cap
+   through a ref so it changes without restarting the loop. The pop-out window has no store, so
+   `fps` rides in the `VizFrame` feed (new field) — and the feed itself (`liveSource.tick`) is
+   gated to the cap so we don't serialise frames the pop-out would drop. **Two entry points:**
+   Settings → Display → Visualizers (a "Frame-rate cap" select) and **right-clicking a
+   visualizer** — both the top-bar viz widget (`fpsMenu` context menu in `TopBar.tsx`) and the
+   pop-out windows (`fpsMenu` in `Popout.tsx`), each with a ✓ on the current value. The pop-out
+   has no store, so its menu round-trips through a new IPC pair: `setVizFps` (pop-out → main →
+   main window via the `viz-set-fps` channel) lands in `startVizFeedBridge`'s `onVizSetFps`
+   listener, which calls `store.setVizFps` — that persists it and restamps the feed, so the
+   in-bar widgets and every open pop-out converge on the new cap. The pop-out also sets fps
+   optimistically for instant feedback before the round-trip confirms via the next frame.
 2. ~~**VU nerd-mode label padding.**~~ **DONE 2026-06-17.** The VU's `−∞ dB` peak readout
    (top-right) and the right-aligned `0` dB tick (bottom-right) inset by a 3px `PAD` from the
    widget edges, and every dB label sits a hair (1px) above the bottom border so none kiss the

@@ -50,6 +50,8 @@ export interface VizFrame {
   sampleRate: number
   /** now-playing track title, shown in the pop-out header ('' when idle) */
   title: string
+  /** current render-rate cap, so the pop-out throttles to match live changes */
+  fps: number
 }
 
 export interface Playlist {
@@ -150,6 +152,9 @@ export interface Settings {
   vizScope: VizScope
   /** width (px) of the docked visualizer side panel */
   vizPanelWidth: number
+  /** visualizer render-rate cap (fps). rAF/display refresh is the hard ceiling,
+   *  so this only ever throttles drawing; the top option ≈ "uncapped". */
+  vizFps: number
 }
 
 /** one tag proposal from an AcoustID/MusicBrainz lookup */

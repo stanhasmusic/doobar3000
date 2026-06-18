@@ -82,7 +82,8 @@ const DEFAULT_SETTINGS: Settings = {
   outputDeviceId: '',
   visualizers: ALL_VIZ_SCOPES,
   vizScope: 'spectrum',
-  vizPanelWidth: 360
+  vizPanelWidth: 360,
+  vizFps: 60
 }
 export const getSettings = async (): Promise<Settings> => ({
   ...DEFAULT_SETTINGS,

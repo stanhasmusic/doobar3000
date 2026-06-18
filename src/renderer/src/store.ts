@@ -17,6 +17,7 @@ import {
 import { audio, toRadioUrl } from './audio'
 import { VIBE_ENABLED } from './smartPlaylists'
 import { applyThemeColors } from './vizColors'
+import { DEFAULT_VIZ_FPS } from './vizFps'
 
 // Theme colors + the canvas-viz color snapshot live in ./vizColors (kept free of
 // audio/store imports so pop-out windows can reuse them). vizColors is re-exported
@@ -173,6 +174,8 @@ interface State {
   vizPanelOpen: boolean
   vizScope: VizScope
   vizPanelWidth: number
+  /** visualizer render-rate cap (fps); throttles every viz draw loop */
+  vizFps: number
   ffmpeg: FfmpegStatus | null
   ffmpegProgress: number | null
   lufsProgress: ScanProgress | null
@@ -202,6 +205,7 @@ interface State {
   closeVizPanel: () => void
   setVizScope: (s: VizScope) => void
   setVizPanelWidth: (w: number) => void
+  setVizFps: (fps: number) => void
   dismissWelcome: () => void
   replayWelcome: () => void
   removeFromLibrary: (paths: string[]) => Promise<void>
@@ -260,7 +264,8 @@ function persistSettings(): void {
     outputDeviceId: s.outputDeviceId,
     visualizers: s.visualizers,
     vizScope: s.vizScope,
-    vizPanelWidth: s.vizPanelWidth
+    vizPanelWidth: s.vizPanelWidth,
+    vizFps: s.vizFps
   })
 }
 
@@ -374,6 +379,7 @@ export const useStore = create<State>((set, get) => ({
   vizPanelOpen: false,
   vizScope: 'spectrum',
   vizPanelWidth: 360,
+  vizFps: DEFAULT_VIZ_FPS,
   ffmpeg: null,
   ffmpegProgress: null,
   lufsProgress: null,
@@ -412,6 +418,7 @@ export const useStore = create<State>((set, get) => ({
       visualizers: settings.visualizers?.length ? settings.visualizers : ALL_VIZ_SCOPES,
       vizScope: settings.vizScope ?? 'spectrum',
       vizPanelWidth: settings.vizPanelWidth || 360,
+      vizFps: settings.vizFps || DEFAULT_VIZ_FPS,
       ffmpeg,
       fpcalcFound,
       favorites: radio.favorites,
@@ -573,6 +580,10 @@ export const useStore = create<State>((set, get) => ({
     set({ vizPanelWidth: Math.max(220, Math.min(720, Math.round(vizPanelWidth))) })
     clearTimeout(saveSettingsTimer)
     saveSettingsTimer = setTimeout(persistSettings, 400)
+  },
+  setVizFps: (vizFps) => {
+    set({ vizFps })
+    persistSettings()
   },
 
   dismissWelcome: () => {

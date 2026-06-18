@@ -11,6 +11,7 @@ import { SettingsMenu } from './SettingsMenu'
 import { Spectrum, VuMeter } from './Visualizers'
 import { VIZ_PANEL_ENABLED } from './VizPanel'
 import { clampToViewport } from '../clampMenu'
+import { VIZ_FPS_OPTIONS } from '../vizFps'
 
 const Icon = ({ d, size = 16 }: { d: string; size?: number }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor">
@@ -58,12 +59,14 @@ export function TopBar() {
   const layout = useStore((s) => s.topbarLayout)
   const nerdMode = useStore((s) => s.nerdMode)
   const visualizers = useStore((s) => s.visualizers)
+  const vizFps = useStore((s) => s.vizFps)
   const { togglePlay, next, prev, setVolume, toggleShuffle, cycleRepeat } = useStore.getState()
 
   const [arranging, setArranging] = useState(false)
   const [drag, setDrag] = useState<Drag | null>(null)
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null)
   const [vizMenu, setVizMenu] = useState<{ x: number; y: number } | null>(null)
+  const [fpsMenu, setFpsMenu] = useState<{ x: number; y: number } | null>(null)
 
   // Clicking the viz widget either toggles the docked panel (if enabled) or opens
   // a menu to pop a scope into its own window (the panel is parked by default).
@@ -74,6 +77,14 @@ export function TopBar() {
     }
     e.stopPropagation() // don't let this click immediately dismiss the menu
     setVizMenu({ x: e.clientX, y: e.clientY })
+  }
+
+  // Right-clicking the viz widget picks the render-rate cap (it stops propagation
+  // so the top-bar's own context menu doesn't open instead).
+  const onVizContext = (e: React.MouseEvent): void => {
+    e.preventDefault()
+    e.stopPropagation()
+    setFpsMenu({ x: e.clientX, y: e.clientY })
   }
 
   const track = trackByPath(library, currentPath)
@@ -93,6 +104,14 @@ export function TopBar() {
     window.addEventListener('click', close)
     return () => window.removeEventListener('click', close)
   }, [vizMenu])
+
+  // …and the render-rate menu.
+  useEffect(() => {
+    if (!fpsMenu) return
+    const close = () => setFpsMenu(null)
+    window.addEventListener('click', close)
+    return () => window.removeEventListener('click', close)
+  }, [fpsMenu])
 
   // Esc leaves rearrange mode (so does the Done pill / clicking outside the bar).
   // Click-away uses pointerdown so it never fires mid-drag (a widget drag starts
@@ -196,11 +215,12 @@ export function TopBar() {
       <div
         className={`viz ${nerdMode && !arranging ? 'viz-expandable' : ''}`}
         onClick={nerdMode && !arranging ? onVizClick : undefined}
+        onContextMenu={nerdMode && !arranging ? onVizContext : undefined}
         title={
           nerdMode && !arranging
             ? VIZ_PANEL_ENABLED
               ? 'Toggle visualizer panel'
-              : 'Pop out a visualizer'
+              : 'Pop out a visualizer · right-click for frame rate'
             : undefined
         }
       >
@@ -317,6 +337,24 @@ export function TopBar() {
               }}
             >
               ⇱ {VIZ_SCOPE_LABELS[s]}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {fpsMenu && (
+        <div ref={clampToViewport} className="context-menu" style={{ left: fpsMenu.x, top: fpsMenu.y }}>
+          <div className="menu-head">Frame-rate cap</div>
+          {VIZ_FPS_OPTIONS.map((f) => (
+            <div
+              key={f}
+              className="menu-item"
+              onClick={() => {
+                useStore.getState().setVizFps(f)
+                setFpsMenu(null)
+              }}
+            >
+              {f === vizFps ? '✓' : '  '} {f} fps
             </div>
           ))}
         </div>

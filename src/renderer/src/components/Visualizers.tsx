@@ -2,18 +2,27 @@ import { useEffect, useRef } from 'react'
 import { audio } from '../audio'
 import { useStore, vizColors } from '../store'
 import { pickDbTicks, pickFreqTicks } from '../vizTicks'
+import { makeFpsGate } from '../vizFps'
 
 // The draw callback is held in a ref and refreshed every render, so the rAF loop
 // (started once) always calls the latest closure — letting `draw` read live props
-// like nerd mode without restarting the loop.
-function useCanvasLoop(draw: (g: CanvasRenderingContext2D, w: number, h: number) => void) {
+// like nerd mode without restarting the loop. `fps` is likewise read live via a
+// ref so the user's render-rate cap can change without tearing down the loop.
+function useCanvasLoop(
+  draw: (g: CanvasRenderingContext2D, w: number, h: number) => void,
+  fps: number
+) {
   const ref = useRef<HTMLCanvasElement>(null)
   const drawRef = useRef(draw)
   drawRef.current = draw
+  const fpsRef = useRef(fps)
+  fpsRef.current = fps
   useEffect(() => {
     let raf = 0
-    const loop = () => {
+    const gate = makeFpsGate()
+    const loop = (now: number) => {
       raf = requestAnimationFrame(loop)
+      if (!gate(now, fpsRef.current)) return
       const canvas = ref.current
       if (!canvas) return
       const dpr = window.devicePixelRatio || 1
@@ -46,6 +55,7 @@ export function Spectrum() {
   const analyser = audio.spectrumAnalyser
   const data = useRef(new Uint8Array(analyser.frequencyBinCount))
   const nerdMode = useStore((s) => s.nerdMode)
+  const fps = useStore((s) => s.vizFps)
 
   const ref = useCanvasLoop((g, w, h) => {
     analyser.getByteFrequencyData(data.current)
@@ -85,7 +95,7 @@ export function Spectrum() {
         g.fillText(t.label, Math.max(1, Math.min(w - 1, x)), h)
       })
     }
-  })
+  }, fps)
 
   return <canvas ref={ref} className="spectrum" />
 }
@@ -97,6 +107,7 @@ export function VuMeter() {
   const buffers = useRef(audio.vuAnalysers.map((a) => new Float32Array(a.fftSize)))
   const peaks = useRef([VU_FLOOR, VU_FLOOR])
   const nerdMode = useStore((s) => s.nerdMode)
+  const fps = useStore((s) => s.vizFps)
 
   const ref = useCanvasLoop((g, w, h) => {
     const axis = nerdMode && w >= 90 ? 13 : 0 // bottom strip for the dB scale
@@ -155,7 +166,7 @@ export function VuMeter() {
       g.fillStyle = peakMax > -1 ? '#ff5c5c' : vizColors.text
       g.fillText(`${peakMax <= VU_FLOOR ? '−∞' : peakMax.toFixed(1)} dB`, w - PAD, PAD)
     }
-  })
+  }, fps)
 
   return <canvas ref={ref} className="vu-meter" title="VU (L/R)" />
 }

@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { ALL_VIZ_SCOPES, VIZ_SCOPE_LABELS, type VizScope } from '../../../shared/types'
+import { clampToViewport } from '../clampMenu'
 import { applyThemeColors } from '../vizColors'
+import { DEFAULT_VIZ_FPS, VIZ_FPS_OPTIONS } from '../vizFps'
 import { VizCanvas, type VizSource } from './VizScopes'
 
 // A floating pop-out visualizer window. It has no audio of its own — it renders
@@ -35,17 +37,38 @@ export function Popout({ initialScope }: { initialScope: VizScope }): React.Reac
   const [scope, setScope] = useState<VizScope>(initialScope)
   const [enabled, setEnabled] = useState<VizScope[]>(ALL_VIZ_SCOPES)
   const [title, setTitle] = useState('')
+  // The render-rate cap lives in the main window's settings; we get an initial
+  // value here and then track live changes off each frame (see below).
+  const [fps, setFps] = useState(DEFAULT_VIZ_FPS)
+  const [fpsMenu, setFpsMenu] = useState<{ x: number; y: number } | null>(null)
+
+  // Right-click anywhere in the pop-out → pick the render-rate cap. We forward the
+  // choice to the main window (it owns/persists the setting) and optimistically set
+  // it locally so the throttle reacts instantly, before the round-trip confirms it.
+  const onContext = (e: React.MouseEvent): void => {
+    e.preventDefault()
+    setFpsMenu({ x: e.clientX, y: e.clientY })
+  }
+
+  useEffect(() => {
+    if (!fpsMenu) return
+    const close = (): void => setFpsMenu(null)
+    window.addEventListener('click', close)
+    return () => window.removeEventListener('click', close)
+  }, [fpsMenu])
 
   // Match the main app's theme (and refresh the canvas color snapshot for it).
   useEffect(() => {
     void window.api.getSettings().then((s) => {
       applyThemeColors(s.theme ?? 'dark', s.accentColor || '#e0556e')
       if (s.visualizers?.length) setEnabled(s.visualizers)
+      if (s.vizFps) setFps(s.vizFps)
     })
   }, [])
 
   // Receive analyser frames: feed the draw buffers + track the now-playing title
-  // (setTitle bails out when unchanged, so it only re-renders the header on track changes).
+  // and live fps cap (both setState calls bail out when unchanged, so they only
+  // re-render on an actual track change / fps change).
   useEffect(() => {
     window.api.onVizFrame((f) => {
       latest.freq = f.freq
@@ -53,6 +76,7 @@ export function Popout({ initialScope }: { initialScope: VizScope }): React.Reac
       latest.timeR = f.timeR
       latest.sampleRate = f.sampleRate
       setTitle(f.title)
+      setFps(f.fps)
     })
   }, [])
 
@@ -60,7 +84,7 @@ export function Popout({ initialScope }: { initialScope: VizScope }): React.Reac
   const active = available.includes(scope) ? scope : (available[0] ?? scope)
 
   return (
-    <div className="popout">
+    <div className="popout" onContextMenu={onContext}>
       <div className="popout-head">
         <select
           className="viz-panel-select popout-select"
@@ -83,8 +107,27 @@ export function Popout({ initialScope }: { initialScope: VizScope }): React.Reac
         </button>
       </div>
       <div className="popout-stage">
-        <VizCanvas key={active} scope={active} source={ipcSource} />
+        <VizCanvas key={active} scope={active} source={ipcSource} fps={fps} />
       </div>
+
+      {fpsMenu && (
+        <div ref={clampToViewport} className="context-menu" style={{ left: fpsMenu.x, top: fpsMenu.y }}>
+          <div className="menu-head">Frame-rate cap</div>
+          {VIZ_FPS_OPTIONS.map((f) => (
+            <div
+              key={f}
+              className="menu-item"
+              onClick={() => {
+                window.api.setVizFps(f)
+                setFps(f) // optimistic; the round-trip confirms via the next frame
+                setFpsMenu(null)
+              }}
+            >
+              {f === fps ? '✓' : '  '} {f} fps
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

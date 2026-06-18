@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 import { type VizScope } from '../../../shared/types'
 import { vizColors } from '../vizColors'
 import { pickFreqTicks } from '../vizTicks'
+import { makeFpsGate } from '../vizFps'
 
 // Shared visualizer rendering for Phase C. The four scopes are pure draw
 // functions over a `VizSource` — an abstraction of the analyser taps — so the
@@ -26,15 +27,20 @@ const STAGE_BG_RGB = '11,11,14' // dark stage, theme-independent (visualizers re
 // refreshed every render via a ref, so it always sees live props.
 function useStageCanvas(
   draw: (g: CanvasRenderingContext2D, w: number, h: number) => void,
+  fps: number,
   opts: { clear?: boolean; onResize?: (w: number, h: number) => void } = {}
 ): React.RefObject<HTMLCanvasElement> {
   const ref = useRef<HTMLCanvasElement>(null)
   const drawRef = useRef(draw)
   drawRef.current = draw
+  const fpsRef = useRef(fps)
+  fpsRef.current = fps
   useEffect(() => {
     let raf = 0
-    const loop = (): void => {
+    const gate = makeFpsGate()
+    const loop = (now: number): void => {
       raf = requestAnimationFrame(loop)
+      if (!gate(now, fpsRef.current)) return
       const canvas = ref.current
       if (!canvas) return
       const dpr = window.devicePixelRatio || 1
@@ -328,15 +334,17 @@ const SCOPES: Record<VizScope, ScopeSpec> = {
 // scopes remounts it (fresh per-scope state + correct clear/loop config).
 export function VizCanvas({
   scope,
-  source
+  source,
+  fps
 }: {
   scope: VizScope
   source: VizSource
+  fps: number
 }): React.ReactNode {
   const spec = SCOPES[scope]
   const stateRef = useRef<Record<string, unknown> | null>(null)
   if (!stateRef.current) stateRef.current = spec.init(source)
-  const ref = useStageCanvas((g, w, h) => spec.draw(g, w, h, source, stateRef.current!), {
+  const ref = useStageCanvas((g, w, h) => spec.draw(g, w, h, source, stateRef.current!), fps, {
     clear: spec.clear,
     onResize: (w, h) => spec.onResize?.(w, h, stateRef.current!)
   })
