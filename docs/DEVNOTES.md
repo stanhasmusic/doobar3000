@@ -233,8 +233,8 @@ pre-releases (alpha, unsigned). Newest first.
   2026-06-13 — every top element is a draggable widget; the resting bar is clean, and
   **right-click → "Rearrange"** enters an edit mode where widgets can be dragged onto each
   other to swap (order persists as `topbarLayout`). Single-row reorder also means no widget
-  can land under the Windows caption buttons. Possible remaining item: resizable
-  spectrum/VU meters.
+  can land under the Windows caption buttons. (Resizable top-bar spectrum/VU meters were
+  considered and dropped 2026-06-21 — no real value after the recent viz polish.)
 - **Background-work indicator DONE** 2026-06-13 (`LogoMark.tsx`): the brand mark is a vinyl
   record top-left; it spins and fills its ring with the accent to show overall background
   progress (scan / loudness / vibe summed), with a hover tooltip and a brief completion beat.
@@ -315,10 +315,14 @@ shown; (4) **multi-select** — Shift/Ctrl-click with batch Remove / Add-to-Play
 album. *Legend* specifically still misses **auto** art (genuine MusicBrainz data gap — see
 the gotcha above) but is now reachable via Identify + manual art.
 
-Two paths still want a real-world try because the harness can't supply the inputs:
-**auto-tag identification** (paste a free AcoustID key in ⚙, then right-click a track →
-Identify) and **online cover-art fetch** (play a track with no embedded art but clean
-album/artist tags — watch the art panel fill in).
+**Auto-tag identification — CONFIRMED WORKING 2026-06-21** (Stan, with his own AcoustID
+key + right-click → Identify). Open follow-up (not a bug): the feature is **bring-your-own
+AcoustID key**, which is less turnkey than iTunes. Works fine as-is; a later pass could
+streamline key supply (e.g. ship/share a key, or smooth the paste-key flow).
+
+One path still wants a real-world try because the harness can't supply the input:
+**online cover-art fetch** (play a track with no embedded art but clean album/artist tags —
+watch the art panel fill in). Stan to test on a large local import.
 
 ## Planned — Nerd Mode + Internet Radio (designed 2026-06-16, not yet built)
 
@@ -513,9 +517,15 @@ container changed.
   (main→main-window). New settings: `vizScope`, `vizPanelWidth` (the `visualizers` enabled-set
   still gates which scopes the selector offers). The old `VisualizerOverlay.tsx` was deleted.
 - **Self-check:** type-clean (only the pre-existing `music-metadata` errors) and builds with
-  correct code-splitting (`Popout`/`VizScopes` are separate chunks from `App`). A clean harness
-  screenshot was blocked by a running instance holding the userData dir — **needs a real
-  relaunch + user test** (panel toggle, resize, pop-out onto a second monitor).
+  correct code-splitting (`Popout`/`VizScopes` are separate chunks from `App`).
+- **VERIFIED 2026-06-21 (harness):** pop-outs captured live via the dev harness (a temporary
+  capture of pop-out `webContents`, since the screenshot path only grabs the main window).
+  Confirmed end-to-end with a track autoplaying: **two pop-outs open at once**; each shows its
+  scope selector + the live now-playing title ("Nutshell") + × close; theme applied (dark
+  stage); and both render live data fed over IPC — **Spectrum** (log bars + per-bar peak-hold
+  dots + adaptive 30Hz–10kHz axis) and **Goniometer** (live M/+S vectorscope). Earlier this was
+  also user-confirmed (multiple at once + theme). The docked panel stays parked
+  (`VIZ_PANEL_ENABLED=false`); second-monitor drag is the only bit not exercised headlessly.
 
 #### Original first-cut overlay (replaced)
 
