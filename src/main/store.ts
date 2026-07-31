@@ -23,18 +23,56 @@ async function readJson<T>(file: string, fallback: T): Promise<T> {
   }
 }
 
+// Writes in flight right now. `flushPending` awaits these on quit so a 34 MB
+// library.json save isn't killed mid-rename by app.quit(); see the before-quit
+// handler in index.ts.
+const pending = new Set<Promise<void>>()
+
 async function writeJson(file: string, data: unknown): Promise<void> {
-  const dir = dataDir()
-  await fs.mkdir(dir, { recursive: true })
-  const dest = path.join(dir, file)
-  // Atomic write: serialize to a temp file, then rename it over the target.
-  // rename is atomic on a single volume, so a crash (or a second concurrent
-  // write) can never leave a truncated library.json — a reader always sees the
-  // complete old contents or the complete new ones. The pid in the temp name
-  // keeps concurrent writers from sharing a scratch file.
-  const tmp = `${dest}.${process.pid}.tmp`
-  await fs.writeFile(tmp, JSON.stringify(data))
-  await fs.rename(tmp, dest)
+  const p = (async (): Promise<void> => {
+    const dir = dataDir()
+    await fs.mkdir(dir, { recursive: true })
+    const dest = path.join(dir, file)
+    // Atomic write: serialize to a temp file, then rename it over the target.
+    // rename is atomic on a single volume, so a crash (or a second concurrent
+    // write) can never leave a truncated library.json — a reader always sees the
+    // complete old contents or the complete new ones. The pid in the temp name
+    // keeps concurrent writers from sharing a scratch file.
+    const tmp = `${dest}.${process.pid}.tmp`
+    await fs.writeFile(tmp, JSON.stringify(data))
+    await fs.rename(tmp, dest)
+  })()
+  pending.add(p)
+  try {
+    await p
+  } finally {
+    pending.delete(p)
+  }
+}
+
+/**
+ * Resolves once no write is in flight. A write that starts while we're draining
+ * is picked up by the re-check, so this can't return with work still pending.
+ * Rejections are swallowed — a failed save must not block the app from quitting.
+ */
+export async function flushPending(): Promise<void> {
+  while (pending.size) await Promise.allSettled([...pending])
+}
+
+/**
+ * A hard kill (Task Manager, power loss) leaves the scratch file behind — no
+ * quit handler can catch that, so sweep at boot instead. Only this process's own
+ * pid pattern would be reused, but any stale .tmp here is dead weight.
+ */
+export async function sweepTempFiles(): Promise<void> {
+  try {
+    const dir = dataDir()
+    for (const name of await fs.readdir(dir)) {
+      if (name.endsWith('.tmp')) await fs.rm(path.join(dir, name), { force: true })
+    }
+  } catch {
+    // Nothing to sweep, or the dir doesn't exist yet — never block startup.
+  }
 }
 
 export const getLibrary = async (): Promise<Track[]> => {

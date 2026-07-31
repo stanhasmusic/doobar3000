@@ -341,11 +341,50 @@ and the Space rule felt good — but **the app visually lagged badly during a pa
 
 **ALL USER-TESTED & CONFIRMED 2026-07-30.** Round 1: playback correct during a pass, type-ahead
 + the Space rule feel good. Round 2 (after `4c70b4e`): the lag is gone — "feeling much better
-now". The whole branch is confirmed working; **only thing left is merging
-`search-and-loudness-perf` into `main`** (not done — Stan's call).
+now". **Merged into `main` 2026-07-30** (merge commit `9c20df8`, pushed to `origin/main`); the
+`search-and-loudness-perf` branch is closed out. Unreleased — the last tag is still `v0.3.0`.
 
-Untouched pre-existing issue this work brushed against: the final `saveLibrary` of a pass can
-race `app.quit()`.
+**Quit-vs-save race — FIXED 2026-07-31.** The pre-existing issue the perf work brushed against:
+`window-all-closed → app.quit()` (`src/main/index.ts`) with no `before-quit` handler, so a
+26–34 MB `saveLibrary` in flight just died with the process. **`library.json` was never at risk** —
+`writeJson` is already temp-file + `rename`, and rename can't tear — so the real damage was (a) up
+to 5s of analysis results lost and (b) an orphaned multi-MB `.tmp` in `%APPDATA%\doobar3000` on
+every quit. Three parts:
+
+- **Drain in-flight writes.** `store.ts` keeps a `pending` set of live write promises; new
+  `flushPending()` awaits them (`while (pending.size)`, so a write that starts mid-drain is still
+  caught; `allSettled` because a failed save must not block quitting). The `before-quit` handler
+  `preventDefault()`s, drains, then re-quits. **The `quitting` guard is load-bearing** — without it
+  the re-quit re-enters the handler and `preventDefault()`s forever, hanging the app with no
+  window and no way to kill it but Task Manager. Living in `store.ts` rather than around the
+  analysis pass means settings/playlists/radio writes get the same protection free.
+- **Abandon, don't flush, the pass's own saves** (Stan's call — simpler and cleaner). A new
+  `shuttingDown` flag stops workers taking new tracks, short-circuits `maybeSave`, and skips the
+  final `saveLibrary`. Safe *because* the work list is derived from `lufs === null`: unsaved
+  results are just re-measured next launch (≲65 tracks at 13/s). The alternative — one last 34 MB
+  serialize on the way out — would make quit feel like it hangs on a loaded disk.
+- **Sweep stale `.tmp` at boot** (`sweepTempFiles`, first thing in `whenReady`). This is the only
+  fix for the case a quit handler structurally *cannot* catch: Task Manager kill, crash, power loss.
+
+Also fixed alongside: **`win` was never nulled on close**, so all ten `win?.webContents.send` sites
+guarded against `null` but not against a *destroyed* `webContents` — a late send from a draining
+pass would throw. `win.on('closed', …)` clears it.
+
+**VERIFIED 2026-07-31 (harness, against the real 58k library).** Sweep: planted a stale
+`library.json.99999.tmp`, gone after boot. Drain: temporarily instrumented `writeJson` with an
+env-gated delay and started a write 1s *before* the screenshot quit — log order was
+`write in flight → before-quit: draining → write finishing → drain complete, quitting for real`,
+exit 0 after ~3s of held quit, i.e. the write completed instead of being killed. No-hang (the
+`quitting` guard) confirmed by the process exiting on its own both runs. `library.json` and
+`playlists.json` md5s unchanged across every run; no `.tmp` left behind. Typecheck still shows only
+the 2 pre-existing `parseFile` errors. *(Instrumentation removed afterwards — and per the harness
+gotcha below, the edited files were backed up to a scratch copy first, not trusted to
+`git checkout`.)*
+
+**USER-TESTED & CONFIRMED 2026-07-31** (Stan): quit mid-analysis "felt pretty instant" — the drain
+is imperceptible in practice, which is the half the harness can't measure. The abandon-don't-flush
+call is vindicated: had the pass insisted on one last 34 MB serialize, this is exactly where it
+would have been felt.
 
 **Phase C — visualizers: DONE & committed** (`77be8a5`, redesign; `f798bbf`, backlog notes).
 Floating pop-out windows are the keeper (user-confirmed, incl. multiple at once + theme); the
