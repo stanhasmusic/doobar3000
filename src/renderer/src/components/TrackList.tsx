@@ -3,7 +3,7 @@ import type { ColumnKey, Track } from '../../../shared/types'
 import { levelingDbMap, useStore, type SortKey } from '../store'
 import { ALL_COLUMNS, cellValue, COLUMN_DEFS } from '../columns'
 import { resolveSmart, smartName } from '../smartPlaylists'
-import { buildHaystacks, filterTracks } from '../search'
+import { buildHaystacks, filterTracks, normalize, typeaheadValue } from '../search'
 import { SearchBar } from './SearchBar'
 import { droppedPaths } from './Sidebar'
 import { IdentifyDialog } from './IdentifyDialog'
@@ -12,6 +12,8 @@ import { clampToViewport } from '../clampMenu'
 
 const ROW_HEIGHT = 34
 const OVERSCAN = 10
+/** how long a type-ahead word stays open for more letters */
+const TYPEAHEAD_RESET_MS = 1200
 
 interface MenuState {
   x: number
@@ -88,6 +90,9 @@ export function TrackList() {
   const [identifyFor, setIdentifyFor] = useState<Track | null>(null)
   const [infoFor, setInfoFor] = useState<Track | null>(null)
   const roRef = useRef<ResizeObserver | null>(null)
+  const bodyRef = useRef<HTMLDivElement | null>(null)
+  const typeahead = useRef({ buf: '', at: 0 })
+  const [typeaheadBuf, setTypeaheadBuf] = useState('')
   const [drag, setDrag] = useState<{
     key: ColumnKey
     x: number
@@ -154,6 +159,7 @@ export function TrackList() {
   const setBodyRef = useCallback((el: HTMLDivElement | null) => {
     roRef.current?.disconnect()
     roRef.current = null
+    bodyRef.current = el
     if (el) {
       setViewportH(el.clientHeight)
       const ro = new ResizeObserver(() => setViewportH(el.clientHeight))
@@ -170,6 +176,85 @@ export function TrackList() {
     window.addEventListener('click', close)
     return () => window.removeEventListener('click', close)
   }, [])
+
+  // ── Type-ahead jump ───────────────────────────────────────────────────────
+  // Typing with the list focused jumps to the first row whose *sorted column*
+  // starts with what you've typed, and keeps narrowing while you keep typing:
+  // under an Artist sort, p → pa → pan walks toward "Panic! At The Disco".
+  // Matching the sort column is what makes it feel right — it's the column the
+  // list is actually ordered by, so "first row starting with X" is the start of
+  // the X section rather than an arbitrary hit.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.ctrlKey || e.altKey || e.metaKey) return
+      const target = e.target as HTMLElement | null
+      // never steal keys from a text field (the search bar, a rename box…)
+      if (
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        target?.isContentEditable
+      ) {
+        return
+      }
+      // A modal owns the keyboard while it's up; jumping the list behind it would
+      // be invisible and would move the selection out from under the dialog.
+      if (document.querySelector('.modal-backdrop')) return
+      const now = Date.now()
+      // Keystrokes belong to the same word while they keep coming; a pause ends
+      // it, so the next letter starts a fresh jump rather than extending a stale
+      // prefix that's no longer on screen.
+      const continuing = now - typeahead.current.at < TYPEAHEAD_RESET_MS && typeahead.current.buf
+
+      let ch: string
+      if (e.key === 'Escape') {
+        typeahead.current = { buf: '', at: 0 }
+        setTypeaheadBuf('')
+        return
+      } else if (e.key === ' ') {
+        // Space is play/pause — but names have spaces in them. Mid-word it types;
+        // otherwise it stays the transport control it's always been.
+        if (!continuing) return
+        ch = ' '
+      } else if (e.key === 'Backspace') {
+        if (!continuing) return
+        ch = ''
+      } else if (e.key.length === 1) {
+        ch = e.key
+      } else {
+        return
+      }
+
+      const buf =
+        e.key === 'Backspace'
+          ? typeahead.current.buf.slice(0, -1)
+          : (continuing ? typeahead.current.buf : '') + ch
+      typeahead.current = { buf, at: now }
+      setTypeaheadBuf(buf)
+      // Consumed here, so the window-level Space handler doesn't also fire (this
+      // listener runs in the capture phase specifically to get that chance).
+      e.preventDefault()
+      e.stopPropagation()
+      if (!buf) return
+
+      const needle = normalize(buf)
+      const idx = rows.findIndex((t) => typeaheadValue(t, sortKey).startsWith(needle))
+      // No match: hold the buffer where it is rather than jumping somewhere
+      // arbitrary — one mistyped letter shouldn't lose your place.
+      if (idx < 0) return
+      if (bodyRef.current) bodyRef.current.scrollTop = idx * ROW_HEIGHT
+      setSelected(rows[idx].path)
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [rows, sortKey, setSelected])
+
+  // Fade the indicator once the word has timed out, so it reflects what a further
+  // keystroke would actually extend.
+  useEffect(() => {
+    if (!typeaheadBuf) return
+    const id = setTimeout(() => setTypeaheadBuf(''), TYPEAHEAD_RESET_MS)
+    return () => clearTimeout(id)
+  }, [typeaheadBuf])
 
   const first = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN)
   const last = Math.min(rows.length, Math.ceil((scrollTop + viewportH) / ROW_HEIGHT) + OVERSCAN)
@@ -351,6 +436,15 @@ export function TrackList() {
           })}
         </div>
       </div>
+
+      {/* Without this you can't tell whether a keystroke landed, or whether the
+          word is still open for more letters. */}
+      {typeaheadBuf && (
+        <div className="typeahead-chip">
+          <span className="typeahead-col">{COLUMN_DEFS[sortKey as ColumnKey]?.label ?? ''}</span>
+          {typeaheadBuf}
+        </div>
+      )}
 
       <div className="status-bar">
         <Notice />

@@ -2195,3 +2195,31 @@ body {
   color: var(--text-dim);
   font-size: 13px;
 }
+
+/* ---------- Type-ahead jump indicator ---------- */
+/* Floats over the bottom-right of the list: visible while you're typing, gone a
+   moment after you stop — which is exactly when the word stops accepting letters. */
+.typeahead-chip {
+  position: absolute;
+  right: 20px;
+  bottom: 42px;
+  z-index: 5;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 7px 12px;
+  border-radius: 6px;
+  background: var(--bg-pop);
+  border: 1px solid var(--border);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+  color: var(--text);
+  font-size: 14px;
+  pointer-events: none;
+}
+
+.typeahead-col {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-faint);
+}
