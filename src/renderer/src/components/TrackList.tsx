@@ -24,10 +24,16 @@ interface MenuState {
 
 const NUMERIC_KEYS = new Set<SortKey>(['trackNo', 'duration', 'year', 'bitrate', 'sampleRate'])
 
+// ONE reused collator, not `String.localeCompare(…, { sensitivity })` per comparison.
+// Passing options to localeCompare constructs a fresh collator every call, and a
+// 58k-track sort makes ~1M calls: 913ms vs 23ms for the identical ordering. That
+// difference is the whole "clicking a column header freezes the app" problem.
+const collator = new Intl.Collator(undefined, { sensitivity: 'base' })
+
 function compareTracks(a: Track, b: Track, key: SortKey, dir: 1 | -1): number {
   const tier = (x: Track, y: Track, k: SortKey): number => {
     if (NUMERIC_KEYS.has(k)) return Number(x[k] ?? 0) - Number(y[k] ?? 0)
-    return String(x[k] ?? '').localeCompare(String(y[k] ?? ''), undefined, { sensitivity: 'base' })
+    return collator.compare(String(x[k] ?? ''), String(y[k] ?? ''))
   }
   // artist/album-ish sorts cascade like iTunes: → album → track number
   const tiers: SortKey[] =
@@ -71,6 +77,7 @@ export function TrackList() {
   const searchOpen = useStore((s) => s.searchOpen)
   const searchQuery = useStore((s) => s.searchQuery)
   const searchAll = useStore((s) => s.searchAll)
+  const analysisVersion = useStore((s) => s.analysisVersion)
   const {
     playQueue,
     setSort,
@@ -147,7 +154,14 @@ export function TrackList() {
   // view (a manual playlist) keeps its own order, so the headers become live.
   const headersSortable = sortableList || (searching && searchAll)
 
-  const levelDbs = useMemo(() => levelingDbMap(library, levelMode), [library, levelMode])
+  // Analysis lands by mutating tracks in place (see flushAnalysis), so this has to
+  // key off analysisVersion — `library` deliberately keeps its identity. It's the
+  // one derivation that must re-run per batch, and at ~6ms on 58k tracks it can.
+  const levelDbs = useMemo(
+    () => levelingDbMap(library, levelMode),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [library, levelMode, analysisVersion]
+  )
   const gridTemplate = useMemo(
     () => columns.map((k) => COLUMN_DEFS[k].width).join(' '),
     [columns]

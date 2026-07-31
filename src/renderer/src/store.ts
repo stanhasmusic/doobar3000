@@ -182,6 +182,9 @@ interface State {
   lufsProgress: ScanProgress | null
   /** background loudness pass is paused (user-controlled, not persisted) */
   analysisPaused: boolean
+  /** bumped when a batch of analysis results lands. Subscribe to this — not to
+   *  `library` — to re-read lufs/peakDb/brightness/bpm; see flushAnalysis. */
+  analysisVersion: number
   /** how many tracks the pass measures at once — shown when estimating a run */
   analysisConcurrency: number
   /** 'full' = exact EBU R128 per track, 'fast' = 60s sample (~4x quicker) */
@@ -430,6 +433,7 @@ export const useStore = create<State>((set, get) => ({
   ffmpegProgress: null,
   lufsProgress: null,
   analysisPaused: false,
+  analysisVersion: 0,
   analysisConcurrency: 2,
   analysisQuality: 'full',
   analysisPrompt: null,
@@ -1094,24 +1098,40 @@ function scheduleAnalysisFlush(): void {
   analysisFlushTimer = setTimeout(flushAnalysis, 250)
 }
 
+// Applied by DELIBERATE IN-PLACE MUTATION rather than the usual immutable
+// rebuild, because replacing the `library` array is ruinously expensive at scale.
+// A new array identity invalidates every memo derived from it — on a 58k-track
+// library that's a ~900ms re-sort plus a 60ms rebuild of the search index, and
+// this runs 4x a second during a pass. The result was a main thread with no time
+// left to draw, which is exactly what a background job must never cause.
+//
+// It's safe here precisely because of what these fields are: LUFS/peak/brightness
+// never affect sort order, search matching, or which rows a view contains — only
+// the value shown in the Level column, which reads from the `levelDbs` map rather
+// than off the Track. So consumers that must see analysis land subscribe to
+// `analysisVersion` instead of to `library`. Every other write to `library` stays
+// immutable and keeps invalidating memos normally, which is why this doesn't need
+// a matching "structural version" bump at any other call site.
 function flushAnalysis(): void {
   analysisFlushTimer = undefined
   if (!pendingLufs.size && !pendingVibe.size) return
   const s = useStore.getState()
   const reLevel = s.currentPath != null && pendingLufs.has(s.currentPath)
-  const library = s.library.map((t) => {
+  for (const t of s.library) {
     const l = pendingLufs.get(t.path)
-    const v = pendingVibe.get(t.path)
-    if (!l && !v) return t
-    return {
-      ...t,
-      ...(l ? { lufs: l.lufs, peakDb: l.peakDb } : {}),
-      ...(v ? { brightness: v.brightness ?? t.brightness, bpm: v.bpm ?? t.bpm } : {})
+    if (l) {
+      t.lufs = l.lufs
+      t.peakDb = l.peakDb
     }
-  })
+    const v = pendingVibe.get(t.path)
+    if (v) {
+      if (v.brightness !== null) t.brightness = v.brightness
+      if (v.bpm !== null) t.bpm = v.bpm
+    }
+  }
   pendingLufs.clear()
   pendingVibe.clear()
-  useStore.setState({ library })
+  useStore.setState({ analysisVersion: s.analysisVersion + 1 })
   if (reLevel) applyLeveling()
 }
 

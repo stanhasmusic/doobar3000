@@ -415,6 +415,9 @@ function LevelingPanel(): React.ReactNode {
   const ffmpeg = useStore((s) => s.ffmpeg)
   const paused = useStore((s) => s.analysisPaused)
   const quality = useStore((s) => s.analysisQuality)
+  // analysis mutates tracks in place, so the counts below only refresh if this
+  // component is subscribed to the version counter (see flushAnalysis)
+  useStore((s) => s.analysisVersion)
   const { setLevelMode, setAnalysisPaused, setAnalysisQuality } = useStore.getState()
   const analyzed = library.filter((t) => t.lufs !== null).length
   const pending = library.length - analyzed
