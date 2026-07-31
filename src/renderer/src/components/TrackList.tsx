@@ -3,6 +3,8 @@ import type { ColumnKey, Track } from '../../../shared/types'
 import { levelingDbMap, useStore, type SortKey } from '../store'
 import { ALL_COLUMNS, cellValue, COLUMN_DEFS } from '../columns'
 import { resolveSmart, smartName } from '../smartPlaylists'
+import { buildHaystacks, filterTracks, normalize, typeaheadValue } from '../search'
+import { SearchBar } from './SearchBar'
 import { droppedPaths } from './Sidebar'
 import { IdentifyDialog } from './IdentifyDialog'
 import { TrackInfoDialog } from './TrackInfoDialog'
@@ -10,6 +12,8 @@ import { clampToViewport } from '../clampMenu'
 
 const ROW_HEIGHT = 34
 const OVERSCAN = 10
+/** how long a type-ahead word stays open for more letters */
+const TYPEAHEAD_RESET_MS = 1200
 
 interface MenuState {
   x: number
@@ -20,10 +24,16 @@ interface MenuState {
 
 const NUMERIC_KEYS = new Set<SortKey>(['trackNo', 'duration', 'year', 'bitrate', 'sampleRate'])
 
+// ONE reused collator, not `String.localeCompare(…, { sensitivity })` per comparison.
+// Passing options to localeCompare constructs a fresh collator every call, and a
+// 58k-track sort makes ~1M calls: 913ms vs 23ms for the identical ordering. That
+// difference is the whole "clicking a column header freezes the app" problem.
+const collator = new Intl.Collator(undefined, { sensitivity: 'base' })
+
 function compareTracks(a: Track, b: Track, key: SortKey, dir: 1 | -1): number {
   const tier = (x: Track, y: Track, k: SortKey): number => {
     if (NUMERIC_KEYS.has(k)) return Number(x[k] ?? 0) - Number(y[k] ?? 0)
-    return String(x[k] ?? '').localeCompare(String(y[k] ?? ''), undefined, { sensitivity: 'base' })
+    return collator.compare(String(x[k] ?? ''), String(y[k] ?? ''))
   }
   // artist/album-ish sorts cascade like iTunes: → album → track number
   const tiers: SortKey[] =
@@ -64,6 +74,10 @@ export function TrackList() {
   const selectedPaths = useStore((s) => s.selectedPaths)
   const levelMode = useStore((s) => s.levelMode)
   const columns = useStore((s) => s.columns)
+  const searchOpen = useStore((s) => s.searchOpen)
+  const searchQuery = useStore((s) => s.searchQuery)
+  const searchAll = useStore((s) => s.searchAll)
+  const analysisVersion = useStore((s) => s.analysisVersion)
   const {
     playQueue,
     setSort,
@@ -83,6 +97,9 @@ export function TrackList() {
   const [identifyFor, setIdentifyFor] = useState<Track | null>(null)
   const [infoFor, setInfoFor] = useState<Track | null>(null)
   const roRef = useRef<ResizeObserver | null>(null)
+  const bodyRef = useRef<HTMLDivElement | null>(null)
+  const typeahead = useRef({ buf: '', at: 0 })
+  const [typeaheadBuf, setTypeaheadBuf] = useState('')
   const [drag, setDrag] = useState<{
     key: ColumnKey
     x: number
@@ -96,7 +113,7 @@ export function TrackList() {
 
   // `sortableList` gates the clickable column headers: manual playlists and the
   // Recently-Added smart list keep their own order; everything else sorts.
-  const { rows, sortableList } = useMemo<{ rows: Track[]; sortableList: boolean }>(() => {
+  const { rows: viewRows, sortableList } = useMemo<{ rows: Track[]; sortableList: boolean }>(() => {
     if (playlist) {
       const byPath = new Map(library.map((t) => [t.path, t]))
       return {
@@ -119,7 +136,32 @@ export function TrackList() {
     }
   }, [library, playlist, smartId, sortKey, sortDir])
 
-  const levelDbs = useMemo(() => levelingDbMap(library, levelMode), [library, levelMode])
+  // Normalized text per track, rebuilt only when the library changes — not per
+  // keystroke (see search.ts).
+  const haystacks = useMemo(() => buildHaystacks(library), [library])
+
+  // Search narrows whatever the view already resolved to. With "All library" on
+  // it ignores the view instead and searches everything, sorted by the active
+  // column so results read the same way the list normally does.
+  const searching = searchOpen && searchQuery.trim().length > 0
+  const rows = useMemo(() => {
+    if (!searching) return viewRows
+    const base = searchAll ? [...library].sort((a, b) => compareTracks(a, b, sortKey, sortDir)) : viewRows
+    return filterTracks(base, searchQuery, haystacks)
+  }, [searching, searchAll, viewRows, library, sortKey, sortDir, searchQuery, haystacks])
+
+  // Searching the whole library produces a sorted list even when the underlying
+  // view (a manual playlist) keeps its own order, so the headers become live.
+  const headersSortable = sortableList || (searching && searchAll)
+
+  // Analysis lands by mutating tracks in place (see flushAnalysis), so this has to
+  // key off analysisVersion — `library` deliberately keeps its identity. It's the
+  // one derivation that must re-run per batch, and at ~6ms on 58k tracks it can.
+  const levelDbs = useMemo(
+    () => levelingDbMap(library, levelMode),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [library, levelMode, analysisVersion]
+  )
   const gridTemplate = useMemo(
     () => columns.map((k) => COLUMN_DEFS[k].width).join(' '),
     [columns]
@@ -131,6 +173,7 @@ export function TrackList() {
   const setBodyRef = useCallback((el: HTMLDivElement | null) => {
     roRef.current?.disconnect()
     roRef.current = null
+    bodyRef.current = el
     if (el) {
       setViewportH(el.clientHeight)
       const ro = new ResizeObserver(() => setViewportH(el.clientHeight))
@@ -147,6 +190,85 @@ export function TrackList() {
     window.addEventListener('click', close)
     return () => window.removeEventListener('click', close)
   }, [])
+
+  // ── Type-ahead jump ───────────────────────────────────────────────────────
+  // Typing with the list focused jumps to the first row whose *sorted column*
+  // starts with what you've typed, and keeps narrowing while you keep typing:
+  // under an Artist sort, p → pa → pan walks toward "Panic! At The Disco".
+  // Matching the sort column is what makes it feel right — it's the column the
+  // list is actually ordered by, so "first row starting with X" is the start of
+  // the X section rather than an arbitrary hit.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.ctrlKey || e.altKey || e.metaKey) return
+      const target = e.target as HTMLElement | null
+      // never steal keys from a text field (the search bar, a rename box…)
+      if (
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        target?.isContentEditable
+      ) {
+        return
+      }
+      // A modal owns the keyboard while it's up; jumping the list behind it would
+      // be invisible and would move the selection out from under the dialog.
+      if (document.querySelector('.modal-backdrop')) return
+      const now = Date.now()
+      // Keystrokes belong to the same word while they keep coming; a pause ends
+      // it, so the next letter starts a fresh jump rather than extending a stale
+      // prefix that's no longer on screen.
+      const continuing = now - typeahead.current.at < TYPEAHEAD_RESET_MS && typeahead.current.buf
+
+      let ch: string
+      if (e.key === 'Escape') {
+        typeahead.current = { buf: '', at: 0 }
+        setTypeaheadBuf('')
+        return
+      } else if (e.key === ' ') {
+        // Space is play/pause — but names have spaces in them. Mid-word it types;
+        // otherwise it stays the transport control it's always been.
+        if (!continuing) return
+        ch = ' '
+      } else if (e.key === 'Backspace') {
+        if (!continuing) return
+        ch = ''
+      } else if (e.key.length === 1) {
+        ch = e.key
+      } else {
+        return
+      }
+
+      const buf =
+        e.key === 'Backspace'
+          ? typeahead.current.buf.slice(0, -1)
+          : (continuing ? typeahead.current.buf : '') + ch
+      typeahead.current = { buf, at: now }
+      setTypeaheadBuf(buf)
+      // Consumed here, so the window-level Space handler doesn't also fire (this
+      // listener runs in the capture phase specifically to get that chance).
+      e.preventDefault()
+      e.stopPropagation()
+      if (!buf) return
+
+      const needle = normalize(buf)
+      const idx = rows.findIndex((t) => typeaheadValue(t, sortKey).startsWith(needle))
+      // No match: hold the buffer where it is rather than jumping somewhere
+      // arbitrary — one mistyped letter shouldn't lose your place.
+      if (idx < 0) return
+      if (bodyRef.current) bodyRef.current.scrollTop = idx * ROW_HEIGHT
+      setSelected(rows[idx].path)
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [rows, sortKey, setSelected])
+
+  // Fade the indicator once the word has timed out, so it reflects what a further
+  // keystroke would actually extend.
+  useEffect(() => {
+    if (!typeaheadBuf) return
+    const id = setTimeout(() => setTypeaheadBuf(''), TYPEAHEAD_RESET_MS)
+    return () => clearTimeout(id)
+  }, [typeaheadBuf])
 
   const first = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN)
   const last = Math.min(rows.length, Math.ceil((scrollTop + viewportH) / ROW_HEIGHT) + OVERSCAN)
@@ -222,7 +344,7 @@ export function TrackList() {
       if (moved) {
         const over = colAt(ev.clientX, ev.clientY)
         if (over) swapColumns(key, over)
-      } else if (sortableList && COLUMN_DEFS[key].sortable) {
+      } else if (headersSortable && COLUMN_DEFS[key].sortable) {
         setSort(key as SortKey)
       }
       setDrag(null)
@@ -252,6 +374,7 @@ export function TrackList() {
 
   return (
     <div className="tracklist" {...dropProps}>
+      {searchOpen && <SearchBar matches={rows.length} />}
       <div
         className="list-header"
         style={{ gridTemplateColumns: gridTemplate }}
@@ -262,7 +385,7 @@ export function TrackList() {
       >
         {columns.map((key) => {
           const def = COLUMN_DEFS[key]
-          const canSort = sortableList && def.sortable
+          const canSort = headersSortable && def.sortable
           // the target leans toward the dragged column's slot — the way it'll travel on a swap
           const isOver = drag?.over === key
           const overDir =
@@ -290,6 +413,12 @@ export function TrackList() {
         ref={setBodyRef}
         onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}
       >
+        {searching && !rows.length && (
+          <div className="list-no-matches">
+            No tracks match “{searchQuery.trim()}”
+            {!searchAll && view.type !== 'library' && ' in this view'}.
+          </div>
+        )}
         <div style={{ height: rows.length * ROW_HEIGHT, position: 'relative' }}>
           {rows.slice(first, last).map((t, i) => {
             const index = first + i
@@ -322,10 +451,26 @@ export function TrackList() {
         </div>
       </div>
 
+      {/* Without this you can't tell whether a keystroke landed, or whether the
+          word is still open for more letters. */}
+      {typeaheadBuf && (
+        <div className="typeahead-chip">
+          <span className="typeahead-col">{COLUMN_DEFS[sortKey as ColumnKey]?.label ?? ''}</span>
+          {typeaheadBuf}
+        </div>
+      )}
+
       <div className="status-bar">
         <Notice />
         {rows.length} track{rows.length === 1 ? '' : 's'}
-        {playlist ? ` — ${playlist.name}` : smartId ? ` — ${smartName(smartId)}` : ''}
+        {searching ? ` matching “${searchQuery.trim()}”` : ''}
+        {searching && searchAll
+          ? ' — whole library'
+          : playlist
+            ? ` — ${playlist.name}`
+            : smartId
+              ? ` — ${smartName(smartId)}`
+              : ''}
         {selectedPaths.length > 1 ? ` · ${selectedPaths.length} selected` : ''}
       </div>
 

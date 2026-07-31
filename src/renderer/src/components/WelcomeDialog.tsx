@@ -47,6 +47,17 @@ export function WelcomeDialog() {
               (~80&nbsp;MB, downloads once).
             </li>
             <li>
+              <b>Find anything</b> — press <b>Ctrl&nbsp;+&nbsp;F</b> to search by title, artist,
+              album or genre. Words can come in any order, so “panic dance” finds Panic! At The
+              Disco&apos;s “Time To Dance”. <b>Esc</b> closes it.
+            </li>
+            <li>
+              <b>Jump by typing</b> — with the list in focus, just start typing and it jumps to
+              that spot in whichever column the list is <i>sorted</i> by. Sorted by Artist, typing
+              “panic” lands on Panic! At The Disco. Keep typing to narrow; pause a moment to start
+              a new word.
+            </li>
+            <li>
               <b>Explore ⚙ settings</b> — color themes, loudness auto-leveling, customizable
               columns, and an optional AcoustID key for auto-tagging.
             </li>

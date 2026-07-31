@@ -121,8 +121,32 @@ export async function transcode(trackPath: string): Promise<string | null> {
 }
 
 // EBU R128 integrated loudness + true peak via ffmpeg's ebur128 filter.
+//
+// `fast` measures a 60-second window from 30s in rather than decoding the whole
+// file, which is where nearly all the cost is. Measured against full analysis
+// over 25 real tracks: mean error 0.45 dB, worst 1.8 dB. That's ~3.5x the
+// throughput (14 → 48 tracks/s here) for an error that's usually inaudible but
+// occasionally isn't — hence opt-in rather than the default.
+//
+// The window can miss the audio entirely (an interlude shorter than 30s), and
+// when it does ebur128 does NOT fail — it reports its floor of -70 LUFS, which
+// auto-gain would happily read as "boost this by 50 dB". So a fast reading at or
+// near the floor is treated as no reading and re-measured in full. Genuinely
+// silent tracks then read -70 from the full pass, which is the honest answer.
+const EBUR128_FLOOR = -69
+
 export async function measureLoudness(
-  trackPath: string
+  trackPath: string,
+  fast = false
+): Promise<{ lufs: number; peakDb: number } | null> {
+  const result = await ebur128(trackPath, fast)
+  if (fast && (result === null || result.lufs <= EBUR128_FLOOR)) return ebur128(trackPath, false)
+  return result
+}
+
+async function ebur128(
+  trackPath: string,
+  fast: boolean
 ): Promise<{ lufs: number; peakDb: number } | null> {
   const ff = await findFfmpeg()
   if (!ff.found || !ff.binary) return null
@@ -130,6 +154,8 @@ export async function measureLoudness(
     const proc = spawn(ff.binary!, [
       '-hide_banner',
       '-nostats',
+      // -ss before -i seeks by container index (cheap) instead of decoding to the mark
+      ...(fast ? ['-ss', '30', '-t', '60'] : []),
       '-i',
       trackPath,
       '-map',

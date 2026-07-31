@@ -2107,3 +2107,119 @@ body {
   font-size: 11.5px;
   color: var(--text-dim);
 }
+
+/* ---------- Search bar (Ctrl+F) ---------- */
+/* Sits above the column headers and pushes the list down rather than floating
+   over it, so no rows are ever hidden behind it. */
+.search-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 16px;
+  height: 38px;
+  flex-shrink: 0;
+  background: var(--bg-raised);
+  border-bottom: 1px solid var(--border);
+  animation: search-in 120ms ease-out;
+}
+
+@keyframes search-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+
+.search-icon {
+  color: var(--text-faint);
+  font-size: 15px;
+  line-height: 1;
+}
+
+.search-input {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text);
+  font-size: 13px;
+  font-family: inherit;
+}
+
+.search-input::placeholder {
+  color: var(--text-faint);
+}
+
+.search-count {
+  font-size: 11px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.search-all {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+}
+
+.search-all input {
+  accent-color: var(--accent);
+  margin: 0;
+  cursor: pointer;
+}
+
+.search-close {
+  background: none;
+  border: none;
+  color: var(--text-faint);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 2px 4px;
+  line-height: 1;
+}
+
+.search-close:hover {
+  color: var(--text);
+}
+
+.list-no-matches {
+  padding: 28px 16px;
+  text-align: center;
+  color: var(--text-dim);
+  font-size: 13px;
+}
+
+/* ---------- Type-ahead jump indicator ---------- */
+/* Floats over the bottom-right of the list: visible while you're typing, gone a
+   moment after you stop — which is exactly when the word stops accepting letters. */
+.typeahead-chip {
+  position: absolute;
+  right: 20px;
+  bottom: 42px;
+  z-index: 5;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 7px 12px;
+  border-radius: 6px;
+  background: var(--bg-pop);
+  border: 1px solid var(--border);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+  color: var(--text);
+  font-size: 14px;
+  pointer-events: none;
+}
+
+.typeahead-col {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-faint);
+}

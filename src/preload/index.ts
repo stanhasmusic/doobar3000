@@ -68,6 +68,13 @@ const api = {
   fileStat: (trackPath: string): Promise<{ exists: boolean; size: number; modified: number }> =>
     ipcRenderer.invoke('file-stat', trackPath),
   analyzeLoudness: (): Promise<void> => ipcRenderer.invoke('analyze-loudness'),
+  setAnalysisPaused: (paused: boolean): Promise<void> =>
+    ipcRenderer.invoke('set-analysis-paused', paused),
+  getAnalysisState: (): Promise<{ paused: boolean; concurrency: number }> =>
+    ipcRenderer.invoke('get-analysis-state'),
+  /** nominate tracks the user is about to hear so they're measured first */
+  prioritizeAnalysis: (paths: string[]): Promise<void> =>
+    ipcRenderer.invoke('prioritize-analysis', paths),
   onLufsUpdate: (cb: (u: { path: string; lufs: number; peakDb: number }) => void): void => {
     ipcRenderer.on('lufs-update', (_e, u) => cb(u))
   },

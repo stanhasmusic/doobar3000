@@ -241,6 +241,112 @@ pre-releases (alpha, unsigned). Newest first.
 
 ## Where we left off
 
+**Session 2026-07-30 — search + loudness-pass performance (branch
+`search-and-loudness-perf`, 4 commits, NOT yet merged or user-tested).**
+
+Two asks: a search feature, and the "Analyzing Loudness" pass being unusably slow on a
+58k-track library.
+
+**Measured baseline** (worth keeping — everything below is calibrated to it): library.json
+holds **58,071 tracks / ~34 MB**, of which 49,465 had no LUFS. One 4.5-min mp3 costs **~0.74s
+of ffmpeg CPU**. The pass ran **exactly 2 workers**, hardcoded, on a **32-thread** machine.
+Benchmarked over 200 real unanalyzed tracks: **3.0 tracks/s at concurrency 2 (≈4.5 hours
+remaining) vs 13.3 tracks/s at 16 (≈62 min)**.
+
+- **L1 — concurrency + save cadence** (`418d200`). `ANALYSIS_CONCURRENCY =
+  max(2, min(16, cpus-2))`. **The two knobs are coupled — don't raise one without the other:**
+  a save is `JSON.stringify` + write of the whole 34 MB library = **~125ms of blocked main
+  thread**, and the old every-10-tracks cadence fires twice a second at 16 workers (~30% of the
+  main thread, visible stutter). Saving is now on a **5s wall-clock interval**, which keeps that
+  cost flat as workers scale. Both passes (loudness + vibe) now share one `runAnalysisPass`
+  helper instead of two hand-rolled copies. Only one worker may be mid-save: `writeJson`'s temp
+  file is **per-process**, so two concurrent saves from this process would share one scratch file.
+- **L2 — priority / pause / Fast / prompt** (`11b454b`). *Priority:* starting a track nominates
+  it + the next 3 queued (`prioritize-analysis`) so what you're hearing is measured first — the
+  pass still takes an hour and that hour is the point. *Pause:* **drains** the workers rather
+  than suspending them; the work list is derived from `lufs === null`, so resume is just a fresh
+  pass and there's no cursor to persist. Un-pausing while the old pass is still draining defers
+  the restart via `resumeRequested` (the slot is still held). `analysisPaused` **persists** to
+  settings.json. *Fast mode:* `-ss 30 -t 60` instead of a full decode — **14 → 48 tracks/s**,
+  mean error **0.45 dB**, worst **1.8 dB** over 25 real tracks; opt-in, Settings → Playback →
+  Leveling. **GOTCHA worth remembering:** on a track shorter than the window ebur128 does *not*
+  fail — it reports its floor of **−70 LUFS**, which auto-gain would read as "boost by 50 dB", so
+  a floor reading is treated as no reading and re-measured in full. *Prompt:* imports (or a
+  decoder-pack install) leaving ≥2000 tracks pending ask before pinning the CPU; small imports
+  still start silently.
+- **S1 — Ctrl+F search bar** (`2ec966e`). `src/renderer/src/search.ts` + `SearchBar.tsx`.
+  Filters the current view over title/artist/album/albumArtist/genre; **"All library" toggle**
+  widens past a playlist/smart list (shown only when the view is actually narrower). Terms are
+  **ANDed across fields in any order** ("panic dance" → Panic! At The Disco's "Time To Dance").
+  NFD-minus-combining-marks normalization so "bjork" reaches Björk. **Perf note:** each track's
+  searchable text is prebuilt once per library (`buildHaystacks`), not per keystroke — that keeps
+  a keystroke at **6–11ms on 58k tracks**, so no debounce is needed. Closing clears the query (a
+  hidden filter narrowing the list is indistinguishable from an empty library). Summoned, not
+  permanent chrome — same reasoning as the top-bar edit mode.
+- **S2 — type-ahead jump** (`15d8e8e`). Typing jumps to the first row whose **sorted column**
+  starts with the buffer, narrowing as you type (Artist sort: p→pa→pan → "Panic! At The Disco").
+  1.2s word timeout, Backspace corrects, Escape clears, no-match holds position. **The Space
+  collision:** Space is play/pause but names contain spaces — mid-word it types, otherwise it
+  stays transport. That requires seeing the key before the window-level Space handler, so the
+  listener is **capture-phase** and stops propagation only for keys it consumes (same
+  capture-phase lesson as the top-bar menus). Text fields and open modals (`.modal-backdrop`) are
+  skipped. A chip bottom-right shows the matched column + buffer.
+
+**Verified by harness screenshot against the real 58k library:** Ctrl+F → filter → "56 matches"
++ status bar; type-ahead jumping to Panic At The Disco with the row selected; the chip rendering.
+Typecheck/build clean throughout (still only the 2 pre-existing `parseFile` errors).
+
+**HARNESS GOTCHA discovered:** setting `APPDATA` for the Electron child does **not** redirect
+`app.getPath('appData')` — screenshot runs hit the *real* library.json regardless. Verified
+non-destructive (atomic writes held; library intact, 58,071 tracks, 0 malformed values) and it
+incidentally analyzed 287 tracks for real. Also note `window.useStore` only exists in a **dev**
+build (`import.meta.env.DEV`), so `DEV_EVAL` against a production bundle must drive the UI with
+real DOM events instead — which is the better test anyway.
+
+**First user test (2026-07-30):** playback audio stayed correct with the pass running, type-ahead
+and the Space rule felt good — but **the app visually lagged badly during a pass**. Fixed in
+`4c70b4e`; welcome-guide notes for Ctrl+F and type-ahead added in the same commit.
+
+**PERF LESSON WORTH KEEPING — two main-thread traps at library scale:**
+
+1. **`String.localeCompare(x, { sensitivity })` builds a fresh `Intl.Collator` per call.** A 58k
+   sort makes ~1M calls: **913ms vs 23ms** for one reused module-level collator, identical
+   ordering. This had also been silently freezing the app ~0.9s on *every column-header click* —
+   never reported, just felt slow. **Never pass options to localeCompare in a comparator.**
+2. **Array identity is the real cost of a background job.** `flushAnalysis` rebuilt the `library`
+   array 4x/sec; each new identity invalidated every memo derived from it (the sort + the
+   `buildHaystacks` search index + smart-playlist derivation) — ~1s of work demanded every 250ms,
+   so the thread never got to draw. Audio was fine throughout, which is the diagnostic: the Web
+   Audio graph is off-thread, so **clean audio + janky visuals = main-thread JS, not CPU
+   starvation.**
+
+   Fix = **deliberate in-place mutation + an `analysisVersion` counter**. Safe *only* because of
+   what these fields are: lufs/peakDb/brightness/bpm never affect sort order, search matching, or
+   view membership — only the Level column, which reads from the `levelDbs` map, not off the
+   Track. Consumers needing analysis freshness subscribe to `analysisVersion` (currently
+   `TrackList`'s `levelDbs` memo and `SettingsDialog`'s counts). **Every other write to `library`
+   stays immutable**, which is why no "structural version" bump is needed anywhere else — that
+   asymmetry is the whole reason this is safe to maintain. If you add a nullable Track field that
+   *does* affect ordering or filtering, it must NOT ride the flushAnalysis path.
+
+**HARNESS GOTCHAS (cost real time this session):**
+- `window.useStore` is gated on `import.meta.env.DEV`, which is false in **every** built bundle —
+  including `electron-vite build --mode development`. To drive the store from `DEV_EVAL`, patch
+  the guard to `true`, build, run, then restore **from a scratch copy** — `git checkout <file>`
+  will silently throw away uncommitted work in that file (it did).
+- `DEV_EVAL`'s return value is not printed anywhere. To read a result, have the eval **inject a
+  DOM banner** and read it off the screenshot.
+- Setting `APPDATA` for the Electron child does **not** redirect `app.getPath('appData')`;
+  harness runs always hit the real library.json.
+
+**ALL USER-TESTED & CONFIRMED 2026-07-30.** Round 1: playback correct during a pass, type-ahead
++ the Space rule feel good. Round 2 (after `4c70b4e`): the lag is gone — "feeling much better
+now". The whole branch is confirmed working; **only thing left is merging
+`search-and-loudness-perf` into `main`** (not done — Stan's call).
+
+Untouched pre-existing issue this work brushed against: the final `saveLibrary` of a pass can
+race `app.quit()`.
+
 **Phase C — visualizers: DONE & committed** (`77be8a5`, redesign; `f798bbf`, backlog notes).
 Floating pop-out windows are the keeper (user-confirmed, incl. multiple at once + theme); the
 docked panel is parked behind `VIZ_PANEL_ENABLED=false`; the top-bar viz widget opens a "Pop out"

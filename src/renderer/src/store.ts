@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import {
   ALL_VIZ_SCOPES,
   DEFAULT_TOPBAR_LAYOUT,
+  type AnalysisQuality,
   type ColumnKey,
   type FfmpegStatus,
   type LevelMode,
@@ -179,6 +180,25 @@ interface State {
   ffmpeg: FfmpegStatus | null
   ffmpegProgress: number | null
   lufsProgress: ScanProgress | null
+  /** background loudness pass is paused (user-controlled, not persisted) */
+  analysisPaused: boolean
+  /** bumped when a batch of analysis results lands. Subscribe to this — not to
+   *  `library` — to re-read lufs/peakDb/brightness/bpm; see flushAnalysis. */
+  analysisVersion: number
+  /** how many tracks the pass measures at once — shown when estimating a run */
+  analysisConcurrency: number
+  /** 'full' = exact EBU R128 per track, 'fast' = 60s sample (~4x quicker) */
+  analysisQuality: AnalysisQuality
+  /** pending "this import is big — analyze now?" prompt; null when not asking */
+  analysisPrompt: { pending: number } | null
+  /** Ctrl+F search bar is showing. Kept separate from the query so closing the
+   *  bar clears the filter, but reopening doesn't resurrect a stale one. */
+  searchOpen: boolean
+  /** bumped on every Ctrl+F so an already-open bar re-focuses instead of ignoring it */
+  searchFocusNonce: number
+  searchQuery: string
+  /** widen the search past the current view to the whole library */
+  searchAll: boolean
   vibeProgress: ScanProgress | null
   fpcalcFound: boolean
   fpcalcInstalling: boolean
@@ -206,6 +226,14 @@ interface State {
   setVizScope: (s: VizScope) => void
   setVizPanelWidth: (w: number) => void
   setVizFps: (fps: number) => void
+  setAnalysisPaused: (paused: boolean) => void
+  setAnalysisQuality: (q: AnalysisQuality) => void
+  /** answer the big-import prompt: start the pass now, or leave it paused */
+  answerAnalysisPrompt: (start: boolean) => void
+  openSearch: () => void
+  closeSearch: () => void
+  setSearchQuery: (q: string) => void
+  setSearchAll: (all: boolean) => void
   dismissWelcome: () => void
   replayWelcome: () => void
   removeFromLibrary: (paths: string[]) => Promise<void>
@@ -265,8 +293,29 @@ function persistSettings(): void {
     visualizers: s.visualizers,
     vizScope: s.vizScope,
     vizPanelWidth: s.vizPanelWidth,
-    vizFps: s.vizFps
+    vizFps: s.vizFps,
+    analysisQuality: s.analysisQuality,
+    analysisPaused: s.analysisPaused
   })
+}
+
+// A fresh import of a few thousand tracks means a background pass measured in
+// tens of minutes, so ask rather than just starting one. Small imports (the
+// common case — an album, a handful of files) still start silently: a prompt
+// there would be noise.
+const ANALYSIS_PROMPT_THRESHOLD = 2000
+
+function startOrAskToAnalyze(): void {
+  const s = useStore.getState()
+  if (!s.ffmpeg?.found) return
+  if (VIBE_ENABLED) void window.api.analyzeVibe()
+  const pending = s.library.filter((t) => t.lufs === null).length
+  if (!pending) return
+  if (pending >= ANALYSIS_PROMPT_THRESHOLD && !s.analysisPrompt) {
+    useStore.setState({ analysisPrompt: { pending } })
+    return
+  }
+  void window.api.analyzeLoudness()
 }
 
 // Radio favorites + play-history persist to radio.json. Debounced like settings
@@ -383,6 +432,15 @@ export const useStore = create<State>((set, get) => ({
   ffmpeg: null,
   ffmpegProgress: null,
   lufsProgress: null,
+  analysisPaused: false,
+  analysisVersion: 0,
+  analysisConcurrency: 2,
+  analysisQuality: 'full',
+  analysisPrompt: null,
+  searchOpen: false,
+  searchFocusNonce: 0,
+  searchQuery: '',
+  searchAll: false,
   vibeProgress: null,
   fpcalcFound: false,
   fpcalcInstalling: false,
@@ -419,6 +477,8 @@ export const useStore = create<State>((set, get) => ({
       vizScope: settings.vizScope ?? 'spectrum',
       vizPanelWidth: settings.vizPanelWidth || 360,
       vizFps: settings.vizFps || DEFAULT_VIZ_FPS,
+      analysisQuality: settings.analysisQuality ?? 'full',
+      analysisPaused: settings.analysisPaused ?? false,
       ffmpeg,
       fpcalcFound,
       favorites: radio.favorites,
@@ -471,6 +531,7 @@ export const useStore = create<State>((set, get) => ({
       if (!get().currentStation) return
       set({ stationTitle: title.trim() || null })
     })
+    void window.api.getAnalysisState().then((a) => set({ analysisConcurrency: a.concurrency }))
     if (ffmpeg.found) {
       if (library.some((t) => t.lufs === null)) void window.api.analyzeLoudness()
       if (VIBE_ENABLED && library.some((t) => t.brightness === null || t.bpm === null))
@@ -485,10 +546,7 @@ export const useStore = create<State>((set, get) => ({
     set({ scanning: { done: 0, total: 0 } })
     const library = await window.api.scanFolder(dir)
     set({ library, scanning: null })
-    if (get().ffmpeg?.found) {
-      void window.api.analyzeLoudness()
-      if (VIBE_ENABLED) void window.api.analyzeVibe()
-    }
+    startOrAskToAnalyze()
   },
 
   importPaths: async (paths) => {
@@ -498,10 +556,7 @@ export const useStore = create<State>((set, get) => ({
     set({ library, scanning: null })
     if (!added.length) discardLastSnapshot() // nothing changed — don't leave a no-op undo
     get().showNotice(`Added ${added.length} track${added.length === 1 ? '' : 's'}`)
-    if (get().ffmpeg?.found) {
-      void window.api.analyzeLoudness()
-      if (VIBE_ENABLED) void window.api.analyzeVibe()
-    }
+    startOrAskToAnalyze()
     return added
   },
 
@@ -585,6 +640,31 @@ export const useStore = create<State>((set, get) => ({
     set({ vizFps })
     persistSettings()
   },
+  setAnalysisPaused: (analysisPaused) => {
+    set({ analysisPaused })
+    void window.api.setAnalysisPaused(analysisPaused)
+    persistSettings()
+  },
+  // Quality is read when a pass starts, so a change mid-pass takes effect on the
+  // next one. Tracks already measured keep their reading — switching to 'fast'
+  // doesn't re-do work, it only changes how the remainder is measured.
+  setAnalysisQuality: (analysisQuality) => {
+    set({ analysisQuality })
+    persistSettings()
+  },
+  openSearch: () => set((s) => ({ searchOpen: true, searchFocusNonce: s.searchFocusNonce + 1 })),
+  // Closing clears the query: a hidden filter still narrowing the list would be
+  // indistinguishable from an empty library.
+  closeSearch: () => set({ searchOpen: false, searchQuery: '' }),
+  setSearchQuery: (searchQuery) => set({ searchQuery }),
+  setSearchAll: (searchAll) => set({ searchAll }),
+
+  answerAnalysisPrompt: (start) => {
+    set({ analysisPrompt: null, analysisPaused: !start })
+    void window.api.setAnalysisPaused(!start)
+    persistSettings()
+    if (start) void window.api.analyzeLoudness()
+  },
 
   dismissWelcome: () => {
     set({ seenWelcome: true })
@@ -626,11 +706,10 @@ export const useStore = create<State>((set, get) => ({
     const ffmpeg = await window.api.ffmpegStatus()
     set({ ffmpeg, ffmpegProgress: null })
     get().showNotice(ok ? 'Decoder pack installed.' : 'Decoder pack download failed.')
-    if (ok) {
-      if (get().library.some((t) => t.lufs === null)) void window.api.analyzeLoudness()
-      if (VIBE_ENABLED && get().library.some((t) => t.brightness === null || t.bpm === null))
-        void window.api.analyzeVibe()
-    }
+    // Installing the decoder pack unlocks analysis for the whole library at once,
+    // which on a big one is the same "this will take a while" moment as a bulk
+    // import — so it asks on the same terms.
+    if (ok) startOrAskToAnalyze()
   },
 
   downloadFpcalc: async () => {
@@ -887,8 +966,27 @@ function playAtOrderPos(pos: number): void {
     playing: true,
     position: 0
   })
+  nominateForAnalysis(s, order, pos)
   applyLeveling()
   audio.load(path, true)
+}
+
+// Ask the background pass to measure what's about to be heard before the rest of
+// the library. On a big library the pass takes an hour; what matters during that
+// hour is that the track playing has a correct gain, not that the pass runs in
+// library order. Cheap no-op once everything nearby is analyzed.
+const ANALYSIS_LOOKAHEAD = 4
+
+function nominateForAnalysis(s: State, order: number[], pos: number): void {
+  if (s.levelMode === 'off' || !s.ffmpeg?.found) return
+  const unanalyzed = new Set(s.library.filter((t) => t.lufs === null).map((t) => t.path))
+  if (!unanalyzed.size) return
+  const paths: string[] = []
+  for (let i = pos; i < Math.min(pos + ANALYSIS_LOOKAHEAD, order.length); i++) {
+    const p = s.queue[order[i]]
+    if (p && unanalyzed.has(p)) paths.push(p)
+  }
+  if (paths.length) void window.api.prioritizeAnalysis(paths)
 }
 
 // Drop paths from the play queue (e.g. when tracks are removed from the library)
@@ -1000,24 +1098,40 @@ function scheduleAnalysisFlush(): void {
   analysisFlushTimer = setTimeout(flushAnalysis, 250)
 }
 
+// Applied by DELIBERATE IN-PLACE MUTATION rather than the usual immutable
+// rebuild, because replacing the `library` array is ruinously expensive at scale.
+// A new array identity invalidates every memo derived from it — on a 58k-track
+// library that's a ~900ms re-sort plus a 60ms rebuild of the search index, and
+// this runs 4x a second during a pass. The result was a main thread with no time
+// left to draw, which is exactly what a background job must never cause.
+//
+// It's safe here precisely because of what these fields are: LUFS/peak/brightness
+// never affect sort order, search matching, or which rows a view contains — only
+// the value shown in the Level column, which reads from the `levelDbs` map rather
+// than off the Track. So consumers that must see analysis land subscribe to
+// `analysisVersion` instead of to `library`. Every other write to `library` stays
+// immutable and keeps invalidating memos normally, which is why this doesn't need
+// a matching "structural version" bump at any other call site.
 function flushAnalysis(): void {
   analysisFlushTimer = undefined
   if (!pendingLufs.size && !pendingVibe.size) return
   const s = useStore.getState()
   const reLevel = s.currentPath != null && pendingLufs.has(s.currentPath)
-  const library = s.library.map((t) => {
+  for (const t of s.library) {
     const l = pendingLufs.get(t.path)
-    const v = pendingVibe.get(t.path)
-    if (!l && !v) return t
-    return {
-      ...t,
-      ...(l ? { lufs: l.lufs, peakDb: l.peakDb } : {}),
-      ...(v ? { brightness: v.brightness ?? t.brightness, bpm: v.bpm ?? t.bpm } : {})
+    if (l) {
+      t.lufs = l.lufs
+      t.peakDb = l.peakDb
     }
-  })
+    const v = pendingVibe.get(t.path)
+    if (v) {
+      if (v.brightness !== null) t.brightness = v.brightness
+      if (v.bpm !== null) t.bpm = v.bpm
+    }
+  }
   pendingLufs.clear()
   pendingVibe.clear()
-  useStore.setState({ library })
+  useStore.setState({ analysisVersion: s.analysisVersion + 1 })
   if (reLevel) applyLeveling()
 }
 

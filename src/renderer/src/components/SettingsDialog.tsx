@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import {
   ALL_VIZ_SCOPES,
   VIZ_SCOPE_LABELS,
+  type AnalysisQuality,
   type LevelMode,
   type Theme,
   type VizScope
@@ -412,8 +413,14 @@ function LevelingPanel(): React.ReactNode {
   const library = useStore((s) => s.library)
   const lufsProgress = useStore((s) => s.lufsProgress)
   const ffmpeg = useStore((s) => s.ffmpeg)
-  const { setLevelMode } = useStore.getState()
+  const paused = useStore((s) => s.analysisPaused)
+  const quality = useStore((s) => s.analysisQuality)
+  // analysis mutates tracks in place, so the counts below only refresh if this
+  // component is subscribed to the version counter (see flushAnalysis)
+  useStore((s) => s.analysisVersion)
+  const { setLevelMode, setAnalysisPaused, setAnalysisQuality } = useStore.getState()
   const analyzed = library.filter((t) => t.lufs !== null).length
+  const pending = library.length - analyzed
   return (
     <>
       <div className="set-title">Auto-level volume</div>
@@ -440,9 +447,45 @@ function LevelingPanel(): React.ReactNode {
           </>
         )}
       </div>
+
+      {ffmpeg?.found && pending > 0 && (
+        <>
+          <div className="set-title">Loudness analysis</div>
+          <div className="set-row">
+            <button onClick={() => setAnalysisPaused(!paused)}>
+              {paused ? 'Resume' : 'Pause'}
+            </button>
+            <span className="set-hint">
+              {pending.toLocaleString()} track{pending === 1 ? '' : 's'} left
+              {paused && ' · paused'}
+            </span>
+          </div>
+          <div className="set-row seg">
+            {QUALITIES.map((q) => (
+              <button
+                key={q.value}
+                className={quality === q.value ? 'seg-on' : ''}
+                onClick={() => setAnalysisQuality(q.value)}
+              >
+                {q.label}
+              </button>
+            ))}
+          </div>
+          <div className="set-hint">
+            Full decodes each track for an exact EBU R128 reading. Fast measures a 60-second
+            sample — about 3.5× quicker, typically within 0.5 dB but occasionally off by up to
+            2 dB. Worth it on a large library. Applies to tracks not yet analyzed.
+          </div>
+        </>
+      )}
     </>
   )
 }
+
+const QUALITIES: { value: AnalysisQuality; label: string }[] = [
+  { value: 'full', label: 'Full' },
+  { value: 'fast', label: 'Fast (sampled)' }
+]
 
 function LibraryPanel(): React.ReactNode {
   const ffmpeg = useStore((s) => s.ffmpeg)
