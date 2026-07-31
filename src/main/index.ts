@@ -5,6 +5,7 @@ import { promises as fs } from 'node:fs'
 import http from 'node:http'
 import https from 'node:https'
 import type { IncomingMessage } from 'node:http'
+import os from 'node:os'
 import path from 'node:path'
 import { Readable, Transform } from 'node:stream'
 import { applyAlbumTags, applyTags, downloadFpcalc, findFpcalc, identify } from './acoustid'
@@ -131,6 +132,63 @@ function createPopout(scope: string): void {
     popouts.delete(pop)
     if (popouts.size === 0) win?.webContents.send('viz-feed', false) // last closed → stop feed
   })
+}
+
+// ── Background analysis passes ──────────────────────────────────────────────
+// Both the loudness (LUFS) and vibe passes walk the library filling in per-track
+// measurements, one ffmpeg process per worker. Two knobs decide how long that
+// takes on a real library — measured on a 58k-track/34MB one:
+//
+//   * CONCURRENCY. Each worker is one mostly-CPU-bound ffmpeg decode (~0.74s for a
+//     4.5-min mp3), so throughput scales with cores. The old hardcoded 2 left a
+//     32-thread machine ~94% idle and stretched a ~45-minute job into ~5 hours.
+//     We leave 2 threads for the UI and audio, and cap it — past ~16 the pass
+//     starts competing with playback for memory bandwidth for little gain.
+//   * SAVE CADENCE. library.json is ~34MB at that size and a save costs ~125ms of
+//     *blocked main thread* (86ms JSON.stringify + 39ms write). Saving every N
+//     tracks was harmless at 2 workers (a save every few seconds) but at 16 it
+//     fires twice a second and the UI stutters. Saving on a wall-clock interval
+//     instead keeps that cost flat no matter how many workers are running.
+const ANALYSIS_CONCURRENCY = Math.max(2, Math.min(16, os.cpus().length - 2))
+const ANALYSIS_SAVE_MS = 5000
+
+async function runAnalysisPass<R>(
+  library: Track[],
+  todo: Track[],
+  channel: 'lufs' | 'vibe',
+  measure: (t: Track) => Promise<R | null>,
+  /** Write the measurement onto the track; return false to skip the renderer update. */
+  apply: (t: Track, r: R) => boolean
+): Promise<void> {
+  const queue = [...todo]
+  let done = 0
+  let lastSave = Date.now()
+  let saving = false
+  // Only one worker may be mid-save: writeJson's temp file is per-process, so two
+  // concurrent saves from this process would share (and corrupt) the same scratch file.
+  const maybeSave = async (): Promise<void> => {
+    if (saving || Date.now() - lastSave < ANALYSIS_SAVE_MS) return
+    saving = true
+    lastSave = Date.now()
+    try {
+      await store.saveLibrary(library)
+    } finally {
+      saving = false
+    }
+  }
+  const worker = async (): Promise<void> => {
+    for (let t = queue.shift(); t; t = queue.shift()) {
+      const result = await measure(t)
+      if (result && apply(t, result)) {
+        win?.webContents.send(`${channel}-update`, { path: t.path, ...result })
+      }
+      done++
+      win?.webContents.send(`${channel}-progress`, { done, total: todo.length })
+      await maybeSave()
+    }
+  }
+  await Promise.all(Array.from({ length: ANALYSIS_CONCURRENCY }, () => worker()))
+  await store.saveLibrary(library)
 }
 
 function registerIpc(): void {
@@ -274,63 +332,50 @@ function registerIpc(): void {
     }
   })
 
-  // Background loudness analysis: walks every track missing LUFS, two at a time,
-  // streaming results to the renderer and persisting periodically.
+  // Background loudness analysis: walks every track missing LUFS, streaming
+  // results to the renderer and persisting periodically.
   let analyzing = false
   ipcMain.handle('analyze-loudness', async () => {
     if (analyzing || !(await findFfmpeg()).found) return
     analyzing = true
     try {
       const library = await store.getLibrary()
-      const todo = library.filter((t) => t.lufs === null)
-      let done = 0
-      const queue = [...todo]
-      const worker = async (): Promise<void> => {
-        for (let t = queue.shift(); t; t = queue.shift()) {
-          const result = await measureLoudness(t.path)
-          if (result) {
-            t.lufs = result.lufs
-            t.peakDb = result.peakDb
-            win?.webContents.send('lufs-update', { path: t.path, ...result })
-          }
-          done++
-          win?.webContents.send('lufs-progress', { done, total: todo.length })
-          if (done % 10 === 0) await store.saveLibrary(library)
+      await runAnalysisPass(
+        library,
+        library.filter((t) => t.lufs === null),
+        'lufs',
+        (t) => measureLoudness(t.path),
+        (t, r) => {
+          t.lufs = r.lufs
+          t.peakDb = r.peakDb
+          return true
         }
-      }
-      await Promise.all([worker(), worker()])
-      await store.saveLibrary(library)
+      )
     } finally {
       analyzing = false
     }
   })
 
   // Background vibe analysis (Phase 4.5): brightness (spectral centroid) + BPM
-  // for every track still missing either, two at a time — same shape as the
-  // loudness pass above. The energy axis reuses each track's existing LUFS.
+  // for every track still missing either — same shape as the loudness pass
+  // above. The energy axis reuses each track's existing LUFS.
   let vibing = false
   ipcMain.handle('analyze-vibe', async () => {
     if (vibing || !(await findFfmpeg()).found) return
     vibing = true
     try {
       const library = await store.getLibrary()
-      const todo = library.filter((t) => t.brightness === null || t.bpm === null)
-      let done = 0
-      const queue = [...todo]
-      const worker = async (): Promise<void> => {
-        for (let t = queue.shift(); t; t = queue.shift()) {
-          const result = await measureVibe(t.path)
-          if (result.brightness !== null) t.brightness = result.brightness
-          if (result.bpm !== null) t.bpm = result.bpm
-          if (result.brightness !== null || result.bpm !== null)
-            win?.webContents.send('vibe-update', { path: t.path, ...result })
-          done++
-          win?.webContents.send('vibe-progress', { done, total: todo.length })
-          if (done % 10 === 0) await store.saveLibrary(library)
+      await runAnalysisPass(
+        library,
+        library.filter((t) => t.brightness === null || t.bpm === null),
+        'vibe',
+        (t) => measureVibe(t.path),
+        (t, r) => {
+          if (r.brightness !== null) t.brightness = r.brightness
+          if (r.bpm !== null) t.bpm = r.bpm
+          return r.brightness !== null || r.bpm !== null
         }
-      }
-      await Promise.all([worker(), worker()])
-      await store.saveLibrary(library)
+      )
     } finally {
       vibing = false
     }
