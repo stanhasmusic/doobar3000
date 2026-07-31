@@ -339,8 +339,13 @@ and the Space rule felt good — but **the app visually lagged badly during a pa
 - Setting `APPDATA` for the Electron child does **not** redirect `app.getPath('appData')`;
   harness runs always hit the real library.json.
 
-**NOT yet done / next:** re-test the lag fix; merge the branch. Untouched pre-existing issue this
-work brushed against: the final `saveLibrary` of a pass can race `app.quit()`.
+**ALL USER-TESTED & CONFIRMED 2026-07-30.** Round 1: playback correct during a pass, type-ahead
++ the Space rule feel good. Round 2 (after `4c70b4e`): the lag is gone — "feeling much better
+now". The whole branch is confirmed working; **only thing left is merging
+`search-and-loudness-perf` into `main`** (not done — Stan's call).
+
+Untouched pre-existing issue this work brushed against: the final `saveLibrary` of a pass can
+race `app.quit()`.
 
 **Phase C — visualizers: DONE & committed** (`77be8a5`, redesign; `f798bbf`, backlog notes).
 Floating pop-out windows are the keeper (user-confirmed, incl. multiple at once + theme); the
