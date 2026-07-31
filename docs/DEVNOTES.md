@@ -89,6 +89,13 @@ prints media-protocol requests and renderer console to the terminal.
 Built with `npm run dist` (portable `.exe` into `release/`); shipped as GitHub
 pre-releases (alpha, unsigned). Newest first.
 
+- **v0.4.0 — 2026-07-31** (tag `v0.4.0`). **Search + big-library performance.** Ctrl+F
+  search bar and type-ahead jump (S1/S2); the loudness pass scaled from a hardcoded 2
+  workers to `min(16, cpus-2)` with an interval save cadence (~3.0 → ~13.3 tracks/s on
+  58k tracks), plus priority nomination, pause/resume, Fast mode and a big-import prompt
+  (L1/L2); the two main-thread traps fixed (`localeCompare` collator churn, `flushAnalysis`
+  array identity) so the UI stops stuttering during a pass; and the quit-vs-save race
+  fixed (drain in-flight writes, sweep stale scratch). Everything from `v0.3.0..v0.4.0`.
 - **v0.3.0 — 2026-06-17** (tag `v0.3.0`, commit `e5dd5ba`). Internet radio (Phase D,
   D1–D4), nerd mode (Phase B), pop-out visualizers (Phase C), the settings tree
   (Phase A), plus the viz-polish backlog (adaptive axis density, FPS cap, VU label
