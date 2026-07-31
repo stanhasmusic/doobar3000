@@ -159,6 +159,9 @@ export interface Settings {
    *  'full' decodes the whole file (exact EBU R128); 'fast' measures a 60s
    *  window (~4x quicker, within ~1 dB) — a large-library tradeoff. */
   analysisQuality: AnalysisQuality
+  /** background loudness pass is paused. Persisted: pausing then quitting and
+   *  having it silently resume (now on every core) would defeat the point. */
+  analysisPaused: boolean
 }
 
 export type AnalysisQuality = 'full' | 'fast'

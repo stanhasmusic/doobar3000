@@ -3,6 +3,8 @@ import type { ColumnKey, Track } from '../../../shared/types'
 import { levelingDbMap, useStore, type SortKey } from '../store'
 import { ALL_COLUMNS, cellValue, COLUMN_DEFS } from '../columns'
 import { resolveSmart, smartName } from '../smartPlaylists'
+import { buildHaystacks, filterTracks } from '../search'
+import { SearchBar } from './SearchBar'
 import { droppedPaths } from './Sidebar'
 import { IdentifyDialog } from './IdentifyDialog'
 import { TrackInfoDialog } from './TrackInfoDialog'
@@ -64,6 +66,9 @@ export function TrackList() {
   const selectedPaths = useStore((s) => s.selectedPaths)
   const levelMode = useStore((s) => s.levelMode)
   const columns = useStore((s) => s.columns)
+  const searchOpen = useStore((s) => s.searchOpen)
+  const searchQuery = useStore((s) => s.searchQuery)
+  const searchAll = useStore((s) => s.searchAll)
   const {
     playQueue,
     setSort,
@@ -96,7 +101,7 @@ export function TrackList() {
 
   // `sortableList` gates the clickable column headers: manual playlists and the
   // Recently-Added smart list keep their own order; everything else sorts.
-  const { rows, sortableList } = useMemo<{ rows: Track[]; sortableList: boolean }>(() => {
+  const { rows: viewRows, sortableList } = useMemo<{ rows: Track[]; sortableList: boolean }>(() => {
     if (playlist) {
       const byPath = new Map(library.map((t) => [t.path, t]))
       return {
@@ -118,6 +123,24 @@ export function TrackList() {
       sortableList: true
     }
   }, [library, playlist, smartId, sortKey, sortDir])
+
+  // Normalized text per track, rebuilt only when the library changes — not per
+  // keystroke (see search.ts).
+  const haystacks = useMemo(() => buildHaystacks(library), [library])
+
+  // Search narrows whatever the view already resolved to. With "All library" on
+  // it ignores the view instead and searches everything, sorted by the active
+  // column so results read the same way the list normally does.
+  const searching = searchOpen && searchQuery.trim().length > 0
+  const rows = useMemo(() => {
+    if (!searching) return viewRows
+    const base = searchAll ? [...library].sort((a, b) => compareTracks(a, b, sortKey, sortDir)) : viewRows
+    return filterTracks(base, searchQuery, haystacks)
+  }, [searching, searchAll, viewRows, library, sortKey, sortDir, searchQuery, haystacks])
+
+  // Searching the whole library produces a sorted list even when the underlying
+  // view (a manual playlist) keeps its own order, so the headers become live.
+  const headersSortable = sortableList || (searching && searchAll)
 
   const levelDbs = useMemo(() => levelingDbMap(library, levelMode), [library, levelMode])
   const gridTemplate = useMemo(
@@ -222,7 +245,7 @@ export function TrackList() {
       if (moved) {
         const over = colAt(ev.clientX, ev.clientY)
         if (over) swapColumns(key, over)
-      } else if (sortableList && COLUMN_DEFS[key].sortable) {
+      } else if (headersSortable && COLUMN_DEFS[key].sortable) {
         setSort(key as SortKey)
       }
       setDrag(null)
@@ -252,6 +275,7 @@ export function TrackList() {
 
   return (
     <div className="tracklist" {...dropProps}>
+      {searchOpen && <SearchBar matches={rows.length} />}
       <div
         className="list-header"
         style={{ gridTemplateColumns: gridTemplate }}
@@ -262,7 +286,7 @@ export function TrackList() {
       >
         {columns.map((key) => {
           const def = COLUMN_DEFS[key]
-          const canSort = sortableList && def.sortable
+          const canSort = headersSortable && def.sortable
           // the target leans toward the dragged column's slot — the way it'll travel on a swap
           const isOver = drag?.over === key
           const overDir =
@@ -290,6 +314,12 @@ export function TrackList() {
         ref={setBodyRef}
         onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}
       >
+        {searching && !rows.length && (
+          <div className="list-no-matches">
+            No tracks match “{searchQuery.trim()}”
+            {!searchAll && view.type !== 'library' && ' in this view'}.
+          </div>
+        )}
         <div style={{ height: rows.length * ROW_HEIGHT, position: 'relative' }}>
           {rows.slice(first, last).map((t, i) => {
             const index = first + i
@@ -325,7 +355,14 @@ export function TrackList() {
       <div className="status-bar">
         <Notice />
         {rows.length} track{rows.length === 1 ? '' : 's'}
-        {playlist ? ` — ${playlist.name}` : smartId ? ` — ${smartName(smartId)}` : ''}
+        {searching ? ` matching “${searchQuery.trim()}”` : ''}
+        {searching && searchAll
+          ? ' — whole library'
+          : playlist
+            ? ` — ${playlist.name}`
+            : smartId
+              ? ` — ${smartName(smartId)}`
+              : ''}
         {selectedPaths.length > 1 ? ` · ${selectedPaths.length} selected` : ''}
       </div>
 

@@ -91,9 +91,20 @@ export function App() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.code === 'Space' && !(e.target instanceof HTMLInputElement)) {
+      const typing = e.target instanceof HTMLInputElement
+      if (e.code === 'Space' && !typing) {
         e.preventDefault()
         useStore.getState().togglePlay()
+      }
+      // Ctrl+F opens the search bar; pressing it again re-focuses rather than
+      // toggling shut, matching how find behaves everywhere else.
+      if (e.key === 'f' && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault()
+        useStore.getState().openSearch()
+      }
+      // Esc closes search from anywhere, not just with the box focused.
+      if (e.key === 'Escape' && !typing && useStore.getState().searchOpen) {
+        useStore.getState().closeSearch()
       }
     }
     window.addEventListener('keydown', onKey)

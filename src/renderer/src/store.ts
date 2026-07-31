@@ -188,6 +188,14 @@ interface State {
   analysisQuality: AnalysisQuality
   /** pending "this import is big — analyze now?" prompt; null when not asking */
   analysisPrompt: { pending: number } | null
+  /** Ctrl+F search bar is showing. Kept separate from the query so closing the
+   *  bar clears the filter, but reopening doesn't resurrect a stale one. */
+  searchOpen: boolean
+  /** bumped on every Ctrl+F so an already-open bar re-focuses instead of ignoring it */
+  searchFocusNonce: number
+  searchQuery: string
+  /** widen the search past the current view to the whole library */
+  searchAll: boolean
   vibeProgress: ScanProgress | null
   fpcalcFound: boolean
   fpcalcInstalling: boolean
@@ -219,6 +227,10 @@ interface State {
   setAnalysisQuality: (q: AnalysisQuality) => void
   /** answer the big-import prompt: start the pass now, or leave it paused */
   answerAnalysisPrompt: (start: boolean) => void
+  openSearch: () => void
+  closeSearch: () => void
+  setSearchQuery: (q: string) => void
+  setSearchAll: (all: boolean) => void
   dismissWelcome: () => void
   replayWelcome: () => void
   removeFromLibrary: (paths: string[]) => Promise<void>
@@ -279,7 +291,8 @@ function persistSettings(): void {
     vizScope: s.vizScope,
     vizPanelWidth: s.vizPanelWidth,
     vizFps: s.vizFps,
-    analysisQuality: s.analysisQuality
+    analysisQuality: s.analysisQuality,
+    analysisPaused: s.analysisPaused
   })
 }
 
@@ -420,6 +433,10 @@ export const useStore = create<State>((set, get) => ({
   analysisConcurrency: 2,
   analysisQuality: 'full',
   analysisPrompt: null,
+  searchOpen: false,
+  searchFocusNonce: 0,
+  searchQuery: '',
+  searchAll: false,
   vibeProgress: null,
   fpcalcFound: false,
   fpcalcInstalling: false,
@@ -457,6 +474,7 @@ export const useStore = create<State>((set, get) => ({
       vizPanelWidth: settings.vizPanelWidth || 360,
       vizFps: settings.vizFps || DEFAULT_VIZ_FPS,
       analysisQuality: settings.analysisQuality ?? 'full',
+      analysisPaused: settings.analysisPaused ?? false,
       ffmpeg,
       fpcalcFound,
       favorites: radio.favorites,
@@ -621,6 +639,7 @@ export const useStore = create<State>((set, get) => ({
   setAnalysisPaused: (analysisPaused) => {
     set({ analysisPaused })
     void window.api.setAnalysisPaused(analysisPaused)
+    persistSettings()
   },
   // Quality is read when a pass starts, so a change mid-pass takes effect on the
   // next one. Tracks already measured keep their reading — switching to 'fast'
@@ -629,9 +648,17 @@ export const useStore = create<State>((set, get) => ({
     set({ analysisQuality })
     persistSettings()
   },
+  openSearch: () => set((s) => ({ searchOpen: true, searchFocusNonce: s.searchFocusNonce + 1 })),
+  // Closing clears the query: a hidden filter still narrowing the list would be
+  // indistinguishable from an empty library.
+  closeSearch: () => set({ searchOpen: false, searchQuery: '' }),
+  setSearchQuery: (searchQuery) => set({ searchQuery }),
+  setSearchAll: (searchAll) => set({ searchAll }),
+
   answerAnalysisPrompt: (start) => {
     set({ analysisPrompt: null, analysisPaused: !start })
     void window.api.setAnalysisPaused(!start)
+    persistSettings()
     if (start) void window.api.analyzeLoudness()
   },
 

@@ -157,6 +157,7 @@ const ANALYSIS_SAVE_MS = 5000
 // tracks still read `lufs === null`, resuming is just starting a fresh pass — it
 // picks up exactly where this one stopped, with no cursor to persist.
 let analysisPaused = false
+void store.getSettings().then((s) => (analysisPaused = s.analysisPaused))
 
 // Tracks the user is about to hear jump the queue. At 13 tracks/s a 58k-track
 // library still takes an hour, and during that hour the thing that actually
