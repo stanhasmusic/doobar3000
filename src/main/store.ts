@@ -83,7 +83,8 @@ const DEFAULT_SETTINGS: Settings = {
   visualizers: ALL_VIZ_SCOPES,
   vizScope: 'spectrum',
   vizPanelWidth: 360,
-  vizFps: 60
+  vizFps: 60,
+  analysisQuality: 'full'
 }
 export const getSettings = async (): Promise<Settings> => ({
   ...DEFAULT_SETTINGS,

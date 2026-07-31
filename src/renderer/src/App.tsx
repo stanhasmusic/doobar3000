@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { ConfirmDialog } from './components/ConfirmDialog'
 import { DuplicatesView } from './components/DuplicatesView'
 import { Sidebar } from './components/Sidebar'
 import { TopBar } from './components/TopBar'
@@ -20,6 +21,36 @@ function Content() {
 function Welcome() {
   const seenWelcome = useStore((s) => s.seenWelcome)
   return seenWelcome ? null : <WelcomeDialog />
+}
+
+// Asked after an import (or decoder-pack install) leaves thousands of tracks
+// needing loudness analysis — long enough that it's worth a choice rather than
+// silently pinning the CPU. Declining just pauses; Settings → Playback →
+// Leveling can start it later.
+function AnalysisPrompt() {
+  const prompt = useStore((s) => s.analysisPrompt)
+  const concurrency = useStore((s) => s.analysisConcurrency)
+  const { answerAnalysisPrompt } = useStore.getState()
+  if (!prompt) return null
+  // ~0.85 tracks/s per worker, measured on mixed mp3/m4a at 4-min average.
+  const minutes = Math.max(1, Math.round(prompt.pending / (0.85 * concurrency) / 60))
+  return (
+    <ConfirmDialog
+      title="Analyze loudness now?"
+      message={
+        <>
+          {prompt.pending.toLocaleString()} tracks still need loudness analysis — roughly{' '}
+          {minutes} minute{minutes === 1 ? '' : 's'} in the background. Auto-leveling stays
+          approximate until it finishes. You can pause or resume any time in Settings → Playback →
+          Leveling.
+        </>
+      }
+      confirmLabel="Analyze now"
+      danger={false}
+      onConfirm={() => answerAnalysisPrompt(true)}
+      onCancel={() => answerAnalysisPrompt(false)}
+    />
+  )
 }
 
 export function App() {
@@ -79,6 +110,7 @@ export function App() {
       </div>
       <WaveformBar />
       <Welcome />
+      <AnalysisPrompt />
     </div>
   )
 }

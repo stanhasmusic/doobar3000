@@ -152,13 +152,27 @@ function createPopout(scope: string): void {
 const ANALYSIS_CONCURRENCY = Math.max(2, Math.min(16, os.cpus().length - 2))
 const ANALYSIS_SAVE_MS = 5000
 
+// Pausing doesn't suspend the workers, it drains them: each finishes its current
+// track, the pass saves and exits. Because the work list is derived from which
+// tracks still read `lufs === null`, resuming is just starting a fresh pass — it
+// picks up exactly where this one stopped, with no cursor to persist.
+let analysisPaused = false
+
+// Tracks the user is about to hear jump the queue. At 13 tracks/s a 58k-track
+// library still takes an hour, and during that hour the thing that actually
+// matters is that whatever is playing has a correct gain — not that the pass
+// runs in library order.
+const analysisPriority = new Set<string>()
+
 async function runAnalysisPass<R>(
   library: Track[],
   todo: Track[],
   channel: 'lufs' | 'vibe',
   measure: (t: Track) => Promise<R | null>,
   /** Write the measurement onto the track; return false to skip the renderer update. */
-  apply: (t: Track, r: R) => boolean
+  apply: (t: Track, r: R) => boolean,
+  /** Paths to pull forward, consulted before the in-order queue. */
+  priority?: Set<string>
 ): Promise<void> {
   const queue = [...todo]
   let done = 0
@@ -176,8 +190,22 @@ async function runAnalysisPass<R>(
       saving = false
     }
   }
+  // A queued track the user is about to hear wins over library order. The scan is
+  // only paid while something is actually waiting, and each hit clears itself.
+  const take = (): Track | undefined => {
+    if (priority?.size) {
+      const i = queue.findIndex((t) => priority.has(t.path))
+      if (i !== -1) {
+        const [t] = queue.splice(i, 1)
+        priority.delete(t.path)
+        return t
+      }
+      priority.clear() // everything pending is already analyzed — stop scanning
+    }
+    return queue.shift()
+  }
   const worker = async (): Promise<void> => {
-    for (let t = queue.shift(); t; t = queue.shift()) {
+    for (let t = take(); t && !analysisPaused; t = take()) {
       const result = await measure(t)
       if (result && apply(t, result)) {
         win?.webContents.send(`${channel}-update`, { path: t.path, ...result })
@@ -188,6 +216,11 @@ async function runAnalysisPass<R>(
     }
   }
   await Promise.all(Array.from({ length: ANALYSIS_CONCURRENCY }, () => worker()))
+  // A paused pass stops short of `total`, which the renderer reads as "still
+  // running" and would leave the progress ring spinning forever. Clear it.
+  if (analysisPaused) {
+    win?.webContents.send(`${channel}-progress`, { done: todo.length, total: todo.length })
+  }
   await store.saveLibrary(library)
 }
 
@@ -335,25 +368,52 @@ function registerIpc(): void {
   // Background loudness analysis: walks every track missing LUFS, streaming
   // results to the renderer and persisting periodically.
   let analyzing = false
-  ipcMain.handle('analyze-loudness', async () => {
-    if (analyzing || !(await findFfmpeg()).found) return
+  let resumeRequested = false
+  const startLoudnessPass = async (): Promise<void> => {
+    if (analyzing || analysisPaused || !(await findFfmpeg()).found) return
     analyzing = true
     try {
+      const fast = (await store.getSettings()).analysisQuality === 'fast'
       const library = await store.getLibrary()
       await runAnalysisPass(
         library,
         library.filter((t) => t.lufs === null),
         'lufs',
-        (t) => measureLoudness(t.path),
+        (t) => measureLoudness(t.path, fast),
         (t, r) => {
           t.lufs = r.lufs
           t.peakDb = r.peakDb
           return true
-        }
+        },
+        analysisPriority
       )
     } finally {
       analyzing = false
+      // Un-pausing while the previous pass was still draining couldn't start a
+      // replacement (this one still held the slot), so honour it now.
+      if (resumeRequested) {
+        resumeRequested = false
+        void startLoudnessPass()
+      }
     }
+  }
+  ipcMain.handle('analyze-loudness', startLoudnessPass)
+
+  // Pause drains the running pass; resume starts a fresh one, which recomputes
+  // its work list and so continues from wherever the paused one stopped.
+  ipcMain.handle('set-analysis-paused', (_e, paused: boolean) => {
+    analysisPaused = paused
+    if (paused) resumeRequested = false
+    else if (analyzing) resumeRequested = true
+    else void startLoudnessPass()
+  })
+  ipcMain.handle('get-analysis-state', () => ({
+    paused: analysisPaused,
+    concurrency: ANALYSIS_CONCURRENCY
+  }))
+  // The renderer nominates what it's about to play (current track + next few).
+  ipcMain.handle('prioritize-analysis', (_e, paths: string[]) => {
+    for (const p of paths) analysisPriority.add(p)
   })
 
   // Background vibe analysis (Phase 4.5): brightness (spectral centroid) + BPM

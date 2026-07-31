@@ -155,7 +155,13 @@ export interface Settings {
   /** visualizer render-rate cap (fps). rAF/display refresh is the hard ceiling,
    *  so this only ever throttles drawing; the top option ≈ "uncapped". */
   vizFps: number
+  /** how thoroughly the background loudness pass measures each track.
+   *  'full' decodes the whole file (exact EBU R128); 'fast' measures a 60s
+   *  window (~4x quicker, within ~1 dB) — a large-library tradeoff. */
+  analysisQuality: AnalysisQuality
 }
+
+export type AnalysisQuality = 'full' | 'fast'
 
 /** one tag proposal from an AcoustID/MusicBrainz lookup */
 export interface TagCandidate {
