@@ -51,6 +51,13 @@ function createWindow(): void {
   })
   win.setMenuBarVisibility(false)
 
+  // `win` outlived the window: every `win?.webContents.send` site guards on null,
+  // but the reference stayed set after close, so a late send (a draining analysis
+  // pass) hit a destroyed webContents and threw. Drop it when the window goes.
+  win.on('closed', () => {
+    win = null
+  })
+
   // Security hardening: this app is a single fixed page. Deny any attempt to
   // open a new window or navigate away from it — all real outbound links go
   // through the allow-listed 'open-external' IPC. (Same-origin navigations are
@@ -159,6 +166,12 @@ const ANALYSIS_SAVE_MS = 5000
 let analysisPaused = false
 void store.getSettings().then((s) => (analysisPaused = s.analysisPaused))
 
+// Set once the app is on its way out. A pass in flight stops taking work and
+// abandons its saves: the work list is derived from `lufs === null`, so anything
+// unsaved is simply re-measured next launch — cheaper than making quit wait on a
+// fresh 34MB serialize.
+let shuttingDown = false
+
 // Tracks the user is about to hear jump the queue. At 13 tracks/s a 58k-track
 // library still takes an hour, and during that hour the thing that actually
 // matters is that whatever is playing has a correct gain — not that the pass
@@ -182,7 +195,7 @@ async function runAnalysisPass<R>(
   // Only one worker may be mid-save: writeJson's temp file is per-process, so two
   // concurrent saves from this process would share (and corrupt) the same scratch file.
   const maybeSave = async (): Promise<void> => {
-    if (saving || Date.now() - lastSave < ANALYSIS_SAVE_MS) return
+    if (saving || shuttingDown || Date.now() - lastSave < ANALYSIS_SAVE_MS) return
     saving = true
     lastSave = Date.now()
     try {
@@ -206,7 +219,7 @@ async function runAnalysisPass<R>(
     return queue.shift()
   }
   const worker = async (): Promise<void> => {
-    for (let t = take(); t && !analysisPaused; t = take()) {
+    for (let t = take(); t && !analysisPaused && !shuttingDown; t = take()) {
       const result = await measure(t)
       if (result && apply(t, result)) {
         win?.webContents.send(`${channel}-update`, { path: t.path, ...result })
@@ -222,7 +235,7 @@ async function runAnalysisPass<R>(
   if (analysisPaused) {
     win?.webContents.send(`${channel}-progress`, { done: todo.length, total: todo.length })
   }
-  await store.saveLibrary(library)
+  if (!shuttingDown) await store.saveLibrary(library)
 }
 
 function registerIpc(): void {
@@ -538,6 +551,9 @@ function icyDeinterleave(metaint: number, onTitle: (title: string) => void): Tra
 }
 
 app.whenReady().then(async () => {
+  // Clear scratch files a previous hard kill left behind, before anything writes.
+  await store.sweepTempFiles()
+
   const MIME: Record<string, string> = {
     '.mp3': 'audio/mpeg',
     '.m4a': 'audio/mp4',
@@ -664,3 +680,18 @@ app.whenReady().then(async () => {
 })
 
 app.on('window-all-closed', () => app.quit())
+
+// A save is a ~34MB serialize + write; app.quit() would otherwise kill it and
+// leave the scratch file behind. Hold the quit open until no write is in flight.
+// The `quitting` guard is load-bearing: without it the re-quit below re-enters
+// this handler and preventDefault()s forever, hanging the app with no window.
+let quitting = false
+app.on('before-quit', (e) => {
+  if (quitting) return
+  shuttingDown = true // pass stops taking work and abandons its remaining saves
+  e.preventDefault()
+  void store.flushPending().finally(() => {
+    quitting = true
+    app.quit()
+  })
+})
