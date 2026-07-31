@@ -303,9 +303,44 @@ incidentally analyzed 287 tracks for real. Also note `window.useStore` only exis
 build (`import.meta.env.DEV`), so `DEV_EVAL` against a production bundle must drive the UI with
 real DOM events instead — which is the better test anyway.
 
-**NOT yet done / next:** user testing of all four commits; merge the branch. Untouched
-pre-existing issue this work brushed against: the final `saveLibrary` of a pass can race
-`app.quit()`.
+**First user test (2026-07-30):** playback audio stayed correct with the pass running, type-ahead
+and the Space rule felt good — but **the app visually lagged badly during a pass**. Fixed in
+`4c70b4e`; welcome-guide notes for Ctrl+F and type-ahead added in the same commit.
+
+**PERF LESSON WORTH KEEPING — two main-thread traps at library scale:**
+
+1. **`String.localeCompare(x, { sensitivity })` builds a fresh `Intl.Collator` per call.** A 58k
+   sort makes ~1M calls: **913ms vs 23ms** for one reused module-level collator, identical
+   ordering. This had also been silently freezing the app ~0.9s on *every column-header click* —
+   never reported, just felt slow. **Never pass options to localeCompare in a comparator.**
+2. **Array identity is the real cost of a background job.** `flushAnalysis` rebuilt the `library`
+   array 4x/sec; each new identity invalidated every memo derived from it (the sort + the
+   `buildHaystacks` search index + smart-playlist derivation) — ~1s of work demanded every 250ms,
+   so the thread never got to draw. Audio was fine throughout, which is the diagnostic: the Web
+   Audio graph is off-thread, so **clean audio + janky visuals = main-thread JS, not CPU
+   starvation.**
+
+   Fix = **deliberate in-place mutation + an `analysisVersion` counter**. Safe *only* because of
+   what these fields are: lufs/peakDb/brightness/bpm never affect sort order, search matching, or
+   view membership — only the Level column, which reads from the `levelDbs` map, not off the
+   Track. Consumers needing analysis freshness subscribe to `analysisVersion` (currently
+   `TrackList`'s `levelDbs` memo and `SettingsDialog`'s counts). **Every other write to `library`
+   stays immutable**, which is why no "structural version" bump is needed anywhere else — that
+   asymmetry is the whole reason this is safe to maintain. If you add a nullable Track field that
+   *does* affect ordering or filtering, it must NOT ride the flushAnalysis path.
+
+**HARNESS GOTCHAS (cost real time this session):**
+- `window.useStore` is gated on `import.meta.env.DEV`, which is false in **every** built bundle —
+  including `electron-vite build --mode development`. To drive the store from `DEV_EVAL`, patch
+  the guard to `true`, build, run, then restore **from a scratch copy** — `git checkout <file>`
+  will silently throw away uncommitted work in that file (it did).
+- `DEV_EVAL`'s return value is not printed anywhere. To read a result, have the eval **inject a
+  DOM banner** and read it off the screenshot.
+- Setting `APPDATA` for the Electron child does **not** redirect `app.getPath('appData')`;
+  harness runs always hit the real library.json.
+
+**NOT yet done / next:** re-test the lag fix; merge the branch. Untouched pre-existing issue this
+work brushed against: the final `saveLibrary` of a pass can race `app.quit()`.
 
 **Phase C — visualizers: DONE & committed** (`77be8a5`, redesign; `f798bbf`, backlog notes).
 Floating pop-out windows are the keeper (user-confirmed, incl. multiple at once + theme); the
